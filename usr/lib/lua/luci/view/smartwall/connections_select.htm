@@ -1,0 +1,251 @@
+<%+header%>
+<h1><%:Connections Log%></h1>
+<input id="goBack" type="button" value="Back" onclick="get_MACs();" style="float: right;" />
+
+<script type ="text/javascript">
+
+	var interpreter = new XHR();
+	var globalPage = 0;
+	var cellsVar = 50;
+	var results;
+	var max;
+	var pages;
+
+	function getBaseLog(x, y) {
+  		return Math.log(y) / Math.log(x);
+	}
+
+	// Sets the colour values for length in the web UI
+	// Low value = red, high value = green
+	function set_Colour_Value(max){
+		//Takes maximum value from set of data and sets this to be green value
+		var upperBound = Math.cbrt(max);
+		var unit = 120/upperBound;
+		//Takes length cells and paints them dependant on their value
+		var lowerBound = 0;
+		var table = document.getElementsByClassName("mac-cell-length");
+		
+		for (var i = 0; i < table.length; i++){
+			// Scales hue and lightness dependant on value of cell
+			var cellValue = Math.cbrt(table[i].innerHTML);
+			var scaledValue = unit * cellValue;
+			var lightnessScalar = 55 + (30*(cellValue/upperBound));
+			table[i].style.backgroundColor = "hsl(" + scaledValue+ ",100%," + lightnessScalar + "%)";
+		}
+		
+	}
+	
+	// Function to pull the MAC addresses being monitored from the config file and their respective names
+	// Will then add these to a table to be displayed to user	
+	function get_MACs(){
+
+		// Set styling for table and buttons
+		globalPage = 0;
+		document.getElementById("tableResults").style.opacity = 0.5;
+		document.getElementById("tableResults").style.pointerEvents = 'none';
+		document.getElementById("previousPage").style.visibility = "hidden";
+		document.getElementById("nextPage").style.visibility = "hidden";
+
+		// Make LUA call to get back JSON object containing results saved to results var
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "connections_select")%>', null,
+			function(_, MACs){
+
+				var macResults = MACs;
+				console.log(macResults);
+
+				// Make listMACs value which will be used to fill our table at the end
+				var listMACs = "<table id = \"mac-table\" class=\"cbi-section-table\"><tbody>";
+				listMACs += "<tr><th>Device Name</th><th>MAC Address </th></tr>";
+
+				// Loop over results creating a cell for each with
+				if (macResults != null){
+
+					for (var i = 0; i < macResults.length; i++){
+						var mac = macResults[i];
+						console.log(mac);
+						if(mac != ''){
+
+							// Formula for table cell for each value which is clickable to run OpenResults method
+							listMACs += '<tr draggable = "true" onclick = "get_Results(\'' + mac.devMAC + '\')">'
+								+ '<td class = "mac-cell" style = "width:55%;">'
+								+ mac.devName
+								+ '</td>'
+								+ '<td class = "mac-cell" style = "width:55%;">'
+								+ mac.devMAC
+								+ '</td>'
+								+ '</tr>';
+						}
+					}
+				}
+				else{
+					listMACs += '<tr draggable = "true">'
+							+ '<td>'
+							+ 'No results found'
+							+ '</td>'
+							+ '<td>'
+							+ 'Check config page or refresh page'
+							+ '</td>'
+				}
+
+				// Adds listMACs var to content of table and sets styling.
+				listMACs += "</table>";
+				document.getElementById("tableResults").innerHTML=listMACs;
+               			document.getElementById("tableResults").style.pointerEvents='auto';
+                		document.getElementById("tableResults").style.opacity=1;
+                		document.getElementById("goBack").style.visibility = "hidden";
+		}
+		)
+
+
+	};
+
+	// Function which takes MAC and with this generates results from SQL table representing connections
+	function get_Results(MAC) {
+		
+		document.getElementById("tableResults").style.opacity = 0.5;
+		document.getElementById("tableResults").style.pointerEvents = 'none';
+		console.log(MAC)
+
+		// Call to LUA to get connections history passing it an MAC
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "connections_list")%>', {MAC:MAC},
+			function(_, sql){
+				results = sql;
+
+				// Gets first value of list and pushes length value to global value max
+				var firstVal = results[0]
+				max = firstVal.length;
+
+				// Gets length of results and finds number of pages of data there are from this
+				var resultsLen = results.length;
+				pages = Math.ceil(resultsLen/cellsVar);
+
+				// Calls open results (which will always be first page)
+				if (results != null){
+					open_Results(globalPage, results);
+				}
+				else{
+					listMACs += '<tr draggable = "true">'
+							+ '<td>'
+							+ 'No results found'
+							+ '</td>'
+							+ '<td>'
+							+ 'Check config page or refresh page'
+							+ '</td>'
+				}
+			}
+		)
+	};
+
+	// Method which takes in page number and set of results and generates and update table with these
+	function open_Results(page, results){
+		// Sets visibility of navigation buttons accordingly
+		if(globalPage == 0 && globalPage == pages-1){
+			document.getElementById("previousPage").style.visibility = "hidden";
+			document.getElementById("nextPage").style.visibility = "hidden";
+		}
+		else if(globalPage == 0 && globalPage != pages-1){
+			document.getElementById("previousPage").style.visibility = "hidden";
+			document.getElementById("nextPage").style.visibility = "visible";
+		}
+		else if(globalPage == pages-1){
+			document.getElementById("previousPage").style.visibility = "visible";
+			document.getElementById("nextPage").style.visibility = "hidden";
+		}
+		else{
+			document.getElementById("previousPage").style.visibility = "visible";
+			document.getElementById("nextPage").style.visibility = "visible";
+		}
+
+		// Create indexes for start and end of results to be shown accounting for list size
+		var startIndex = page * cellsVar;
+		var finalIndex = ((page + 1) * cellsVar) - 1;
+		if(finalIndex > results.length){
+			finalIndex = results.length -1;
+		}
+
+		// Create object to hold table and push html into it
+		var listConns = "<table id=\"sql-table\" class=\"cbi-section-table\"><tbody>";
+		listConns+= "<tr><th>To IP</th><th>Connection frequency</th></tr>"
+		console.log(results);
+
+		for (var index = startIndex; index < finalIndex; index++){
+			var result = results[index];
+				if(result != ''){
+
+					listConns += '<tr draggable = "true">'
+						+ '<td class = "mac-cell" style = "width:55%;;">'
+						+ result.toIP
+						+ '</td>'
+						+ '<td class = "mac-cell-length" style = "width:15%;;">'
+						+ result.length
+						+ '</td>'
+						+ '</tr>';
+				}
+		}
+
+		listConns += "</table>";
+		document.getElementById("tableResults").innerHTML=listConns;
+		document.getElementById("tableResults").style.pointerEvents='auto';
+		document.getElementById("tableResults").style.opacity=1;
+		document.getElementById("goBack").style.visibility = "visible";
+		set_Colour_Value(max);
+
+
+	};
+
+	// Increments global page counter and runs open_Results method with this
+	function next_Page(){
+		globalPage++;
+		open_Results(globalPage, results);
+	}
+
+	// Decrements global page counter and runs open_Results method with this
+	function previous_Page(){
+		globalPage--;
+		open_Results(globalPage, results);
+	}
+
+</script>
+
+<style>
+table strong {;
+	padding-left: 8px;
+}
+table tr td:hover {
+	cursor:pointer;
+}
+table tr td .show-on-hover {
+    display: none;
+}
+table tr td:hover .show-on-hover {
+    display: inline;
+}
+.mac-cell {
+    position: relative;
+}
+
+.mac-cell-length {
+	position: relative;
+}
+
+@media (max-width: 767px) {
+    .mac-cell {
+        display: none;
+    }
+}
+
+</style>
+
+
+<div id="tableResults"></div>
+<div id="navButtons">
+	<input id="previousPage" type="button" value="Previous" onclick="previous_Page();" style="float: left;" />
+	<input id="nextPage" type="button" value="Next" onclick="next_Page();" style="float: right;" visibility: hidden; />
+</div>
+<br>
+
+
+<script>
+get_MACs();
+</script>
+<%+footer%>

@@ -1,0 +1,15 @@
+
+config info 'Server'
+	option SQLUsername 'OpenWRT'
+	option SQLPassword 'password'
+	option SQLIP '192.168.1.1'
+
+config monitor
+	option name 'VM'
+	option DeviceIP '192.168.1.121'
+	option mac '08:00:27:c0:de:9d'
+
+config monitor
+	option name 'Ubuntu'
+	option mac '08:00:27:73:7c:a2'
+
