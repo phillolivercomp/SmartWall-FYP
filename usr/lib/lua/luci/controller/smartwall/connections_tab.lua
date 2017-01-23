@@ -5,7 +5,7 @@ luasql = require 'luasql.sqlite3'
 -- Assigning name to library
 sql = assert (luasql.sqlite3())
 -- Establish connection to database
-db = assert(sql:connect('/usr/lib/smartwall/tempHistory.db'))
+db = assert(sql:connect('/tmp/tempHistory.db'))
 -- Connect to config file
 configFile = "/etc/config/cbi_file"	
 
@@ -25,6 +25,16 @@ function index()
 	page = entry({"admin", "smart_tab", "connections_list"}, call("list_connections"), nil)
 	page.leaf = true
 
+	--Create address to check tcpdump is running
+	page = entry({"admin", "smart_tab", "check_tcpdump"}, call ("check_Execution"), nil)
+	page.leaf = true
+
+	page = entry({"admin", "smart_tab", "connection_breakdown"}, call ("result_Breakdown"), nil)
+	page.leaf = true
+
+	page = entry({"admin", "smart_tab", "rename_host"}, call ("rename_host"), nil)
+	page.leaf = true
+
 end
 
 -- Function that will return list of objects to web server being an SQL lookup
@@ -32,7 +42,6 @@ function list_connections()
 	-- Gets value ip from webpage
 	local mac = luci.http.formvalue("MAC")
 	sqlResults = assert(get_results(mac))
-	print(sqlResults)
 
 	-- Will write out results to luci web server if there are any
 	if #sqlResults > 0 then 
@@ -49,7 +58,7 @@ function get_results(mac)
 	-- initialise variables
 	local index, list = 0, {}
 	-- Create sql statement to be run
-	local sql = string.format('SELECT monitorMAC, toIP, SUM(length) AS length FROM connectionHistory WHERE monitorMAC = "%s" GROUP BY toIP ORDER BY length DESC', mac)
+	local sql = string.format('SELECT ipTable.monitorMAC, ipTable.toIP, dnsTable.hostname, SUM(ipTable.length) AS length FROM connectionHistory ipTable, dnsLookups dnsTable WHERE monitorMAC = "%s" AND (dnsTable.toIP = ipTable.toIP)  GROUP BY ipTable.toIP ORDER BY length DESC;', mac)
 	-- Run statement
 	local currResults = assert(db:execute(sql))
 	-- Get first row of results
@@ -60,6 +69,7 @@ function get_results(mac)
 		list[index] = row
 		row = currResults:fetch({}, "a")
 	end
+	print(list)
 	-- return list
 	return list
 end
@@ -113,4 +123,62 @@ function list_devices()
 	end
 
 	return results
+end
+
+function check_Execution()
+	local procFunction = io.popen("pgrep tcpdump")
+	local result = procFunction:read("*a")
+	procFunction:close()
+
+	container = {}
+	if string.match(result, "[0-9]+") == nil then
+		container.value = "False"
+		container.contents = result
+		luci.http.prepare_content("application/json")
+		luci.http.write_json(container)
+	else
+		container.value = "True"
+		container.contents = result
+		luci.http.prepare_content("application/json")
+		luci.http.write_json(container)
+	end
+end
+
+function result_Breakdown()
+	--Getting data of IP and mac address from webpage
+	local index, sqlResults = 0, {}
+	local passedVals = luci.http.formvalue("ipPlusMac")
+	words = {}
+	for word in passedVals:gmatch("[%w%p]+") do table.insert(words, word) end
+	ip = words[1]
+	mac = words[2]
+
+	--Generate SQL statement and print results out
+	local sql = string.format('SELECT * FROM connectionHistory WHERE monitorMAC = "%s" AND toIP = "%s ORDER BY port";', mac, ip)
+	local currResults = assert(db:execute(sql))
+
+	local row = currResults:fetch({}, "a")
+	-- Loop until we dont get a result, populating list
+	while row do
+		index = index + 1
+		sqlResults[index] = row
+		row = currResults:fetch({}, "a")
+	end
+
+	if #sqlResults > 0 then 
+		luci.http.prepare_content("application/json")
+		luci.http.write_json(sqlResults)
+		return
+	end	
+end
+
+function rename_host()
+	local ip = luci.http.formvalue("ip")
+	local name = luci.http.formvalue("newName")
+
+	local file = io.open("/tmp/sqlCommands", "a")
+	local sql = string.format('UPDATE dnsLookups SET hostname = "%s" WHERE toIP = "%s"\n;',name, ip)
+	file:write(sql)
+	file:close()
+
 end
