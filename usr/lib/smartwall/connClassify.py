@@ -5,6 +5,7 @@ import time
 import re
 import sqlite3 as sql
 import os
+import threading
 
 #Defines refresh rate of the IP addresses to be monitored
 refresh_rate = 5
@@ -16,7 +17,8 @@ cur = conn.cursor()
 
 tableName = 'connectionHistory'
 global macList
-
+global dnsCommands
+dnsCommands = []
 
 def getTime():
     #Function that gets the system time in seconds
@@ -44,6 +46,13 @@ def getMACs ():
     #print List
     return List
 
+def pushDns():
+    global dnsCommands
+    for item in dnsCommands:
+        cur.execute(item)
+    dnsCommands = []
+
+
 def checkTables ():
     #Function to check if table exists to hold data
     cur.execute("CREATE TABLE IF NOT EXISTS connectionHistory (monitorMAC text, toIP text, connection text, port integer, length integer, PRIMARY KEY (monitorMAC, toIP, connection, port))")
@@ -60,9 +69,17 @@ def enterDNS (ipAddr):
     if dnsRecord != []:
         entry = dnsRecord[0]
         #print entry
-        cur.execute("INSERT OR IGNORE INTO dnsLookups VALUES (?,?)", (ipAddr, entry))
+        dnsCommands.append('INSERT OR IGNORE INTO dnsLookups VALUES ("'+ipAddr+'","'+entry+'")')
     else:
-        cur.execute("INSERT OR IGNORE INTO dnsLookups VALUES (?,?)", (ipAddr, ""))
+        dnsCommands.append('INSERT OR IGNORE INTO dnsLookups VALUES ("'+ipAddr+'","")')
+
+
+class dnsThread (threading.Thread):
+    def __init__(self, ipAddr):
+        threading.Thread.__init__(self)
+        self.ipAddr = ipAddr
+    def run(self):
+        enterDNS(self.ipAddr)
 
 def tablePush (items):
 
@@ -71,31 +88,8 @@ def tablePush (items):
     cur.execute("INSERT OR IGNORE INTO connectionHistory VALUES (?,?,?,?,?)", (items[0], items[1], items[4], items[2], items[3]))
 
     if cur.rowcount > 0:
-        enterDNS(items[1])
-
-def getIPs (macList):
-    #gets IP addresses to be monitored from mac addresses
-    global ipList
-    ipList = []
-    #runs commands on command line to get fresh arp lookup to tell us IPs vs MAC addresses
-    os.system("rm /tmp/arplookup")
-    os.system("cat /proc/net/arp >> /tmp/arplookup")
-
-    #opens file we just made
-    arpFile = open('/tmp/arplookup', 'r')
-
-    for item in macList:
-        ipList.append('999.999.999.999')
-
-    #reads file line by line to check if MACs exist in it and if so will fetch matching IP
-    for line in arpFile:
-        for item in macList:
-            if item in line:
-                deviceIP = re.findall( r'[0-9]+(?:\.[0-9]+){3}', line)[0]
-                index = macList.index(item)
-                ipList[index] = deviceIP
-
-    #print generatedList
+        t = dnsThread(items[1])
+        t.start()
 
 #first generate macs from config file using method
 
@@ -133,6 +127,7 @@ with proc.stdout:
                         newList()
 
     		#commit changes to database
+                pushDns()
     		conn.commit()
 
 
