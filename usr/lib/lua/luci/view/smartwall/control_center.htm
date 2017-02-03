@@ -1,0 +1,79 @@
+<%+header%>
+<script src="/luci-static/resources/jquery-3.1.1.min.js"></script>
+<script src="/luci-static/resources/Chart.js"></script>
+<h1><%:Control Center%></h1>
+
+<script type ="text/javascript">
+
+	var interpreter = new XHR();
+
+	function get_MACs(){
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "connections_select")%>', null,
+			function(_, MACs){
+				var results = MACs;
+				console.log(results);
+				var divWrite = '';
+
+				for (var i = 0; i < results.length; i++){
+					var mac = results[i];
+					console.log(i)
+					if (mac != ''){
+						divWrite += '<div class = "boxDiv"><h3 style="float:left">' + mac.devName + ' - </h3><h5 style="float:left"><i> ' + mac.devMAC + '</i></h5></div>';
+					}
+					divWrite += '<div id="chart' + mac + '"></div>'
+					get_MAC_History(mac);
+				}
+
+				document.getElementById("resultsTable").innerHTML=divWrite;
+			})
+	}
+
+
+	function get_MAC_History(mac){
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "generate_results")%>', {mac:mac},
+			function(_, res){
+				results = res;
+				console.log(results);
+			})
+
+	}
+
+
+</script>
+<style>
+.boxDiv {
+	width: 45%;
+	margin-right:2.5%;
+	margin-bottom: 10px;
+    height: 50%;
+    float: left;
+    border-radius: 25px;
+    border: 2px solid #AAAAAA;
+    padding:1%;
+
+    padding-bottom: 100px;
+}
+
+.devicesDiv {
+	padding-bottom: 100px;
+}
+
+/*Override default footer settings*/
+footer{
+	border-top: 0px;
+}
+</style>
+
+<div id = "devicesDiv">
+	
+	<h3>Devices</h3>
+	<div id = "resultsTable"></div>
+	<div></div>
+</div>
+<script>
+	get_MACs()
+</script>
+
+<div>
+	<%+footer%>
+</div>

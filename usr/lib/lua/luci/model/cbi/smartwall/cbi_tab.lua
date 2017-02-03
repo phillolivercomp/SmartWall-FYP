@@ -26,23 +26,11 @@ mac = s:option(Value, "mac", translate("<abbr title=\"Media Access Control\">MAC
 mac.datatype = "list(macaddr)"
 mac.rmempty  = true
 
-ip = s:option(Value, "DeviceIP", translate("<abbr title=\"Internet Protocol Version 4\">IPv4</abbr>-Address"))
-ip.datatype = "or(ip4addr,'ignore')"
-
 ipc.neighbors({ family = 4 }, function(n)
 	if n.mac and n.dest then
-		ip:value(n.dest:string())
 		mac:value(n.mac, "%s (%s)" %{ n.mac, n.dest:string() })
 	end
 end)
-
-function ip.validate(self, value, section)
-	local n = name:formvalue(section) or ""
-	if value and #n == 0 then
-		return nil, translate("One of hostname must be specified!")
-	end
-	return Value.validate(self, value, section)
-end
 
 
 return m

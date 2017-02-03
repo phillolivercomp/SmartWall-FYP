@@ -45,10 +45,10 @@ def getMACs ():
     return List
 
 def checkTables ():
-    #Function to check if table exists to hold data
+    #Function to check if tables exists to hold data
     cur.execute("CREATE TABLE IF NOT EXISTS connectionHistory (monitorMAC text, toIP text, connection text, port integer, length integer, PRIMARY KEY (monitorMAC, toIP, connection, port))")
-    #print 'Created master table'
     cur.execute("CREATE TABLE IF NOT EXISTS dnsLookups (toIP text PRIMARY KEY, hostname text)")
+    cur.execute("CREATE TABLE IF NOT EXISTS dataRate (monitorMAC text, hour int, dataSize int, PRIMARY KEY (monitorMAC, hour))")
 
 def enterDNS (ipAddr):
 
@@ -64,14 +64,6 @@ def enterDNS (ipAddr):
     else:
         cur.execute("INSERT OR IGNORE INTO dnsLookups VALUES (?,?)", (ipAddr, ""))
 
-def tablePush (items):
-
-    #Tries to update values in table
-    cur.execute("UPDATE connectionHistory SET length = length + ? WHERE monitorMAC = ? AND toIP = ? AND port = ? AND connection = ?", (items[3], items[0], items[1], items[2], items[4]))
-    cur.execute("INSERT OR IGNORE INTO connectionHistory VALUES (?,?,?,?,?)", (items[0], items[1], items[4], items[2], items[3]))
-
-    if cur.rowcount > 0:
-        enterDNS(items[1])
 
 def getIPs (macList):
     #gets IP addresses to be monitored from mac addresses
@@ -134,7 +126,6 @@ with proc.stdout:
 
     		#commit changes to database
     		conn.commit()
-
 
     	#level 2 loop
     	#for each ip in our iplist

@@ -5,7 +5,7 @@ luasql = require 'luasql.sqlite3'
 -- Assigning name to library
 sql = assert (luasql.sqlite3())
 -- Establish connection to database
-db = assert(sql:connect('/tmp/tempHistory.db'))
+db = assert(sql:connect('/tmp/connections.db'))
 -- Connect to config file
 configFile = "/etc/config/cbi_file"	
 
@@ -13,7 +13,7 @@ configFile = "/etc/config/cbi_file"
 function index()
 
 	-- Viewable tab for the webpage
-	page = entry({"admin", "smart_tab", "connections_tab"}, template("smartwall/connections_select"), _("Connections"), 50)
+	page = entry({"admin", "smart_tab", "connections_tab"}, template("smartwall/connections_select"), _("Connections"), 3)
 	page.i18n = "base"
 	page.dependent = true
 
@@ -154,7 +154,7 @@ function result_Breakdown()
 	mac = words[2]
 
 	--Generate SQL statement and print results out
-	local sql = string.format('SELECT * FROM connectionHistory WHERE monitorMAC = "%s" AND toIP = "%s ORDER BY port";', mac, ip)
+	local sql = string.format('SELECT * FROM connectionHistory WHERE monitorMAC = "%s" AND toIP = "%s" ORDER BY port;', mac, ip)
 	local currResults = assert(db:execute(sql))
 
 	local row = currResults:fetch({}, "a")

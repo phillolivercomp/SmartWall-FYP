@@ -12,7 +12,7 @@ refresh_rate = 5
 interface_name = 'br-lan'
 
 #establishes connection to a database creating it if it doesn't exist
-conn = sql.connect('/tmp/tempHistory.db')
+conn = sql.connect('/tmp/connections.db')
 cur = conn.cursor()
 
 tableName = 'connectionHistory'
@@ -26,6 +26,13 @@ def getTime():
 def setTime():
     global clock
     clock = getTime()
+
+def getHour():
+    return int(time.strftime("%H"))
+def setHour():
+    global hour
+    hour = getHour()
+    print hour
 
 def newList():
     file = open('/tmp/sqlCommands', 'w')
@@ -56,9 +63,8 @@ def pushDns():
 def checkTables ():
     #Function to check if table exists to hold data
     cur.execute("CREATE TABLE IF NOT EXISTS connectionHistory (monitorMAC text, toIP text, connection text, port integer, length integer, PRIMARY KEY (monitorMAC, toIP, connection, port))")
-    #print 'Created master table'
     cur.execute("CREATE TABLE IF NOT EXISTS dnsLookups (toIP text PRIMARY KEY, hostname text)")
-
+    cur.execute("CREATE TABLE IF NOT EXISTS dataRate (monitorMAC, hour int, dataSize int, PRIMARY KEY(monitorMAC, hour))")
 def enterDNS (ipAddr):
 
     #if ip address does not already exist in table do following
@@ -91,6 +97,13 @@ def tablePush (items):
         t = dnsThread(items[1])
         t.start()
 
+def pushHourTotals(hour):
+    for item in macList:
+        cur.execute("SELECT SUM(length) FROM connectionHistory WHERE monitorMAC = ?", (item,))
+        size = cur.fetchone()[0]
+        print size
+        cur.execute("INSERT OR IGNORE INTO dataRate VALUES (?,?,?)", (item, hour, size))
+        cur.execute("UPDATE dataRate SET dataSize = ? WHERE monitorMAC = ? and hour = ?", (size, item, hour))
 #first generate macs from config file using method
 
 macList = getMACs()
@@ -102,7 +115,9 @@ checkTables()
 
 #capture start time of the process and save to clock variable
 setTime()
+setHour()
 newList()
+pushHourTotals(getHour())
 
 #begin running the tcpdump subprocess piping output to stdout
 proc = sub.Popen(('tcpdump', '-l', '-n', '-t', '-q', '-i', 'br-lan', '-e'), stdout=sub.PIPE)
@@ -129,6 +144,11 @@ with proc.stdout:
     		#commit changes to database
                 pushDns()
     		conn.commit()
+                curHour = getHour()
+		global hour
+                if curHour != hour:
+                    pushHourTotals(curHour)
+                    setHour()
 
 
     	#level 2 loop
