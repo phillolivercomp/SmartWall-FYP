@@ -65,6 +65,12 @@ def checkTables ():
     cur.execute("CREATE TABLE IF NOT EXISTS connectionHistory (monitorMAC text, toIP text, connection text, port integer, length integer, PRIMARY KEY (monitorMAC, toIP, connection, port))")
     cur.execute("CREATE TABLE IF NOT EXISTS dnsLookups (toIP text PRIMARY KEY, hostname text)")
     cur.execute("CREATE TABLE IF NOT EXISTS dataRate (monitorMAC, hour int, dataSize int, PRIMARY KEY(monitorMAC, hour))")
+
+def dataRateInit():
+    for mac in macList:
+        for num in range (0,24):
+            cur.execute("INSERT OR IGNORE INTO dataRate VALUES (?,?,0)", (mac, num))
+
 def enterDNS (ipAddr):
 
     #if ip address does not already exist in table do following
@@ -78,7 +84,6 @@ def enterDNS (ipAddr):
         dnsCommands.append('INSERT OR IGNORE INTO dnsLookups VALUES ("'+ipAddr+'","'+entry+'")')
     else:
         dnsCommands.append('INSERT OR IGNORE INTO dnsLookups VALUES ("'+ipAddr+'","")')
-
 
 class dnsThread (threading.Thread):
     def __init__(self, ipAddr):
@@ -102,8 +107,11 @@ def pushHourTotals(hour):
         cur.execute("SELECT SUM(length) FROM connectionHistory WHERE monitorMAC = ?", (item,))
         size = cur.fetchone()[0]
         print size
-        cur.execute("INSERT OR IGNORE INTO dataRate VALUES (?,?,?)", (item, hour, size))
-        cur.execute("UPDATE dataRate SET dataSize = ? WHERE monitorMAC = ? and hour = ?", (size, item, hour))
+        if size > 0:
+        	cur.execute("UPDATE dataRate SET dataSize = ? WHERE monitorMAC = ? and hour = ?", (size, item, hour))
+        else:
+        	cur.execute("UPDATE dataRate SET dataSize = 0 WHERE monitorMAC = ? and hour = ?", (item, hour))
+
 #first generate macs from config file using method
 
 macList = getMACs()
@@ -118,6 +126,7 @@ setTime()
 setHour()
 newList()
 pushHourTotals(getHour())
+dataRateInit()
 
 #begin running the tcpdump subprocess piping output to stdout
 proc = sub.Popen(('tcpdump', '-l', '-n', '-t', '-q', '-i', 'br-lan', '-e'), stdout=sub.PIPE)

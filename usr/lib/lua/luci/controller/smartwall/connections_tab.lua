@@ -78,7 +78,6 @@ end
 function list_devices_helper()
 
 	local list, count, file = {}, 0, io.open(configFile, "r")
-
 	-- Loop starts
 	while true do
 		local line = file:read("*line")

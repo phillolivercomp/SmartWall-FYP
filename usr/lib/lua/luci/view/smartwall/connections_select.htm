@@ -30,6 +30,18 @@
 	var toIPbreakdown = "";
 	var currPage;
 	var portChart;
+	var portDictionary = {"20":"FTP","21":"FTP","22":"SSH", "23":"Telnet", "25": "SMTP", "53": "DNS", "67":"DHCP", "68":"DHCP", "80":"HTTP", "110":"POP", "123":"NTP", "137":"NetBIOS", "138":"NetBIOS", "139":"NetBIOS", "143":"IMAP", "161":"SNMP", "162":"SNMP", "179":"BGP", "389":"LDAP", "443":"HTTPS", "636":"LDAPS", "989":"FTP w/TLS", "990":"FTP w/TLS"};
+
+	function get_Port_Usage(port){
+		var portStr = port.toString();
+		var usage = portDictionary[portStr];
+
+		if(usage != null){
+			return usage + " - ";
+		}
+
+		return "";
+	}
 
 	// SECTION - TCP DUMP CHECKER
 	// Defines functions to be used for tcp dump status bar at top of webpage
@@ -452,20 +464,22 @@
 	};
 
 	function genPortTable(results){
-		var portTableContents = "<table id=\"sql-table\" class=\"cbi-section-table\"><tbody>";
+		var portTableContents = "<table id=\"portTable\" class=\"cbi-section-table\"><tbody>";
 		portTableContents+= "<tr><th>Port</th><th>Direction</th><th>Data sent</th></tr>";
 		console.log(results)
 		for(var i = 0; i < results.length; i++){
 			console.log(i);
 			result = results[i];
+			var usage = get_Port_Usage(result.port);
+			console.log(usage);
 			portTableContents += '<tr draggable = "true">'
-						+ '<td class = "mac-cell" style = "width:25%;;">'
-						+ result.port
+						+ '<td class = "mac-cell" style = "width:40%;;">'
+						+ usage + result.port
 						+ '</td>'
-						+ '<td class = "mac-cell" style = "width:55%;;">'
+						+ '<td class = "mac-cell" style = "width:20%;;">'
 						+ result.connection
 						+ '</td>'
-						+ '<td class = "mac-cell-length" style = "width:15%;;">'
+						+ '<td class = "mac-cell-length" style = "width:40%;;">'
 						+ bytesToSize(result.length)
 						+ '</td>'
 						+ '</tr>';
@@ -538,6 +552,10 @@ table tr td:hover .show-on-hover {
 	display: inline-block;
 	width:45%;
 }
+#portTable{
+	width: 50%;
+}
+
 #divGeoStats{
 	vertical-align:top;
 	display: inline-block;
@@ -602,4 +620,3 @@ get_MACs();
 <br>
 <div id="time"></div>
 <%+footer%>
-

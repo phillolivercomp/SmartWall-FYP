@@ -6,6 +6,28 @@
 <script type ="text/javascript">
 
 	var interpreter = new XHR();
+	var portDictionary = {"20":"FTP","21":"FTP","22":"SSH", "23":"Telnet", "25": "SMTP", "53": "DNS", "67":"DHCP", "68":"DHCP", "80":"HTTP", "110":"POP", "123":"NTP", "137":"NetBIOS", "138":"NetBIOS", "139":"NetBIOS", "143":"IMAP", "161":"SNMP", "162":"SNMP", "179":"BGP", "389":"LDAP", "443":"HTTPS", "636":"LDAPS", "989":"FTP w/TLS", "990":"FTP w/TLS"};
+
+	function get_Port_Usage(port){
+		var portStr = port.toString();
+		var usage = portDictionary[portStr];
+
+		if(usage != null){
+			return usage + " - ";
+		}
+
+		return "";
+	}
+
+	function bytesToSize(byteSize) {
+   		var sizeResults = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+   		if (byteSize == 0){
+   			return '0 Byte';
+   		}
+   		var i = parseInt(Math.floor(Math.log(byteSize) / Math.log(1024)));
+   		var res = Math.round(byteSize / Math.pow(1024, i), 2) + ' ' + sizeResults[i];
+   		return res;
+	};
 
 	function get_MACs(){
 		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "connections_select")%>', null,
@@ -18,30 +40,244 @@
 					var mac = results[i];
 					console.log(i)
 					if (mac != ''){
-						divWrite += '<div class = "boxDiv"><h3 style="float:left">' + mac.devName + ' - </h3><h5 style="float:left"><i> ' + mac.devMAC + '</i></h5></div>';
+						divWrite += '<div class = "boxDiv"><h3 style="float:left">' + mac.devName + ' - </h3><h5 style="float:left"><i> ' + mac.devMAC + '</i></h5>';
 					}
-					divWrite += '<div id="chart' + mac + '"></div>'
-					get_MAC_History(mac);
+					divWrite += '<canvas id="chart' + mac.devMAC + '" class = "historyChart"></canvas>';
+					divWrite += '<input class = "reportButton" type = "button" onclick= "get_report(\'' + mac.devMAC + '\',\'' + mac.devName + '\')" value = "Behaviour" style - "float:right;"/>';
+					divWrite += '<input class = "reportButton" type = "button" value = "SSH Test" style = "float:right;"/>';
+					divWrite += '</div>';
 				}
 
 				document.getElementById("resultsTable").innerHTML=divWrite;
+				for (var i = 0; i < results.length; i++){
+					var mac = results[i]
+					var historyRes = get_MAC_History(mac.devMAC);
+				}
 			})
+	}
+
+	function get24(){
+
+		var numArr = []
+		for (var i = 0; i <24; i++){
+			numArr.push(i.toString()+":00");
+		}
+
+		var d = new Date();
+		var n = d.getHours();
+
+		var returnArr = numArr.slice(n+1).concat((numArr.slice(0, n+1)));
+		
+		return returnArr;
 	}
 
 
 	function get_MAC_History(mac){
+		var results;
 		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "generate_results")%>', {mac:mac},
 			function(_, res){
-				results = res;
-				console.log(results);
-			})
 
+				results = res;
+				var timeAdjRes = format24(results);
+				var ctx = document.getElementById("chart"+mac);
+				var labels = get24();
+
+				var dataset = get_Data(timeAdjRes);
+				
+				var data = {
+				    labels: labels,
+				    datasets: [
+				        {
+				            label: "Data Usage",
+				            fill: true,
+				            lineTension: 0.1,
+				            backgroundColor: "rgba(75,192,192,0.4)",
+				            borderColor: "rgba(75,192,192,1)",
+				            borderCapStyle: 'butt',
+				            borderDash: [],
+				            borderDashOffset: 0.0,
+				            borderJoinStyle: 'miter',
+				            pointBorderColor: "rgba(75,192,192,1)",
+				            pointBackgroundColor: "#fff",
+				            pointBorderWidth: 1,
+				            pointHoverRadius: 5,
+				            pointHoverBackgroundColor: "rgba(75,192,192,1)",
+				            pointHoverBorderColor: "rgba(220,220,220,1)",
+				            pointHoverBorderWidth: 2,
+				            pointRadius: 1,
+				            pointHitRadius: 10,
+				            data: dataset,
+				            spanGaps: false,
+				        }
+				    ], 
+				};
+
+				var myLineChart = new Chart(ctx, {
+				    type: 'line',
+				    data: data,
+				    options: {
+					    	//Animation is enabled
+					        animation: {
+					            animateScale: true
+					        },
+					        tooltips: {
+					        	callbacks: {
+					        		//Renames labels of the chart to read as file size not an int
+					        		label: function(tooltipItem, data) {
+					        			var tableContents = data.datasets[tooltipItem.datasetIndex].data;
+					        			var cellData =  tableContents[tooltipItem.index];
+					        			return bytesToSize(cellData);
+					        		}
+					        	}	
+					        },
+					        scales:{
+					        	yAxes:[{
+					        		display:true,
+					        		ticks: {
+					        			maxTicksLimit: 2,
+					        			beginAtZero: true,
+					        			callback: function (valuePayload) {
+										    return bytesToSize(valuePayload);
+										}					
+					        		}
+					        	}]
+					        }
+					    }
+				});
+			})
+	}
+
+	function format24(results){
+
+		var d = new Date();
+		var n = d.getHours();
+
+		var newResults = results.slice(n+1).concat((results.slice(0, n+1)));
+		console.log(newResults);
+		return newResults;
+	}
+
+	function get_Data(results){
+		var dataList = [];
+		for(var i = 0; i< results.length; i++){
+			dataList.push(results[i].dataSize);
+		}
+		for(var j = 1; j<dataList.length; j++){
+			if (dataList[j] < dataList[j-1]){
+				dataList[j] = 0;
+			}
+			else{
+				dataList[j]= dataList[j]-dataList[j-1]
+			}
+		}
+		console.log(dataList);
+		return dataList;
+	}
+
+	function get_report(mac, name){
+		var resultObj;
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "report_call")%>', {mac:mac},
+			function(_, res){
+				resultObj = res;
+				if (resultObj != null){
+					
+					open_report();
+					var dataIN = bytesToSize(resultObj.dataIN);
+					var dataOUT = bytesToSize(resultObj.dataOUT);
+					var serviceList = get_services(resultObj);
+					var unnamedservList = get_unnamed_services(resultObj);
+					console.log(serviceList);
+					var reportHtml = "<h1>Behaviour Report</h1>";
+					reportHtml += '<p class ="content">Number of addresses: ' + resultObj.IPs.length + '</p>'
+								+ '<p class ="content">Most common port: ' + resultObj.ports[0] + '</p>'
+								+ '<p class ="content">Data received: ' + bytesToSize(resultObj.dataIN) + '</p>'
+								+ '<p class ="content">Data sent: ' + bytesToSize(resultObj.dataOUT) + '</p>'
+								+ '<p class ="content">Services used: ' + list_format(serviceList) + '</p>'
+								+ '<p class ="content">Unnamed ports used: ' + list_format(unnamedservList) + '</p>'
+
+					var buttons = '<input class = "behaviourButton" type = "button" onclick="open_behaviour()" value = "Set behaviour" style = "float:right;"/>';
+					document.getElementById("report_content").innerHTML = reportHtml + buttons
+				}
+				else{
+					alert("No data to show");
+				}
+			});
+	}
+
+	function get_services(report){
+		var serviceList = [];
+		console.log(report);
+		for(var i = 0; i < report.ports.length; i++){
+			var port = report.ports[i];
+			if(portDictionary[port] != undefined){
+				serviceList.push(portDictionary[port] + " / " + port);
+			}
+		}
+		return serviceList
+	}
+
+	function get_unnamed_services(report){
+		var serviceList = [];
+		console.log(report);
+		for(var i = 0; i < report.ports.length; i++){
+			var port = report.ports[i];
+			if(portDictionary[port] == undefined){
+				serviceList.push(port);
+			}
+		}
+		return serviceList
+	}
+
+	function list_format(list){
+		if(list.length > 0){
+			var stringList = "<br>-" + list[0];
+			for(var i = 1; i < list.length; i++){
+				stringList += "<br>-"+ list[i];
+			}
+			return stringList
+		}
+		else{
+			return "None"
+		}
+		
+	}
+
+	function open_report(){
+		document.getElementById("report_overlay").style.width = "100%";
+	}
+
+	function close_report(){
+		document.getElementById("report_overlay").style.width = "0%";
+	}
+
+	function open_behaviour(){
+		document.getElementById("behaviourOverlay").style.width = "100%"
+	}
+
+	function close_behaviour(){
+		document.getElementById("behaviourOverlay").style.width = "0%"
 	}
 
 
 </script>
 <style>
+.historyChart{
+	margin-top: 50px;
+	margin-bottom: -50px;
+}
+
+.reportButton {
+	margin-top: 60px;
+	position: relative;
+}
+
+.behaviourButton{
+	position: absolute;
+	bottom: 20px;
+}
+
 .boxDiv {
+	position: relative;
 	width: 45%;
 	margin-right:2.5%;
 	margin-bottom: 10px;
@@ -50,14 +286,69 @@
     border-radius: 25px;
     border: 2px solid #AAAAAA;
     padding:1%;
+    transition: 1s
 
-    padding-bottom: 100px;
 }
 
 .devicesDiv {
 	padding-bottom: 100px;
 }
 
+.overlay{
+	height: 100%;
+	width: 0;
+	position: fixed;
+	z-index:; 1;
+	left: 0;
+	top: 0;
+	background-color: rgba(0,0,0,0.5);
+	overflow-x:hidden;
+	transition: 0.2s;
+
+}
+.overlay .overlayClose{
+	position: absolute;
+	top: 50px;
+	right: 50px;
+	font-size: 50px;
+	color: #FFFFFF;
+
+}
+
+.overlay a:hover{
+	color: #A1A1A1;
+	cursor: pointer;
+	text-decoration: none;
+	transition: 0.5s;
+}
+
+.overlayContent{
+	position: absolute;
+	padding: 50px;
+	width: 50%;
+	height: 60%;
+	margin:auto;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: rgb(255,255,255);
+	border-radius: 25px;
+}
+
+.behaviourButton{
+	background-color: #FFFFFF;
+	border: 1px solid #AAAAAA; 
+}
+
+.reportText{
+	padding-top: 70px;
+	font-size: 30px;
+}
+
+.reportVal{
+	font-size: 40px;
+}
 /*Override default footer settings*/
 footer{
 	border-top: 0px;
@@ -68,7 +359,16 @@ footer{
 	
 	<h3>Devices</h3>
 	<div id = "resultsTable"></div>
-	<div></div>
+	<div id = "report_overlay" class = "overlay">
+		<a class = "overlayClose" onclick = "close_report()">&times;</a>
+		<div id = "report_content" class = "overlayContent">
+			
+		</div>
+	</div>
+	<div id = "behaviourOverlay" class = "overlay">
+		<a class = "overlayClose" onclick = "close_behaviour()">&times;</a>
+		<div id = "behaviour_content" class = "overlayContent">
+	</div>
 </div>
 <script>
 	get_MACs()
