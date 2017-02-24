@@ -23,7 +23,7 @@ user = "root"
 
 threadList = ["t1", "t2", "t3", "t4", "t5"]
 
-class sshThread (threading.Thread):
+class telThread (threading.Thread):
 	def __init__(self, threadID, q):
 		threading.Thread.__init__(self)
 		self.threadID = threadID
@@ -42,14 +42,14 @@ def telLogin(threadName, q):
 			queueLock.release()
 			
 			telconn = pexpect.spawn(connectCommand)
-			time.sleep(20)
+			time.sleep(1)
 			telconn.logfile = sys.stdout
 			telconn.expect(":")
-			time.sleep(20)
+			time.sleep(1)
 			telconn.send(d[0] + "\r")
 			telconn.expect(":")
 			telconn.send(d[1])
-			time.sleep(20)
+			time.sleep(1)
 			telconn.expect(">")
 			global successState
 			successState = True
@@ -64,7 +64,7 @@ threads = []
 threadID = 1
 
 for thread in threadList:
-	thread = sshThread(threadID, workQueue)
+	thread = telThread(threadID, workQueue)
 	thread.start()
 	threads.append(thread)
 	threadID +=1
