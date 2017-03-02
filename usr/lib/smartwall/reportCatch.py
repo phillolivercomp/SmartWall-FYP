@@ -34,7 +34,7 @@ setHour()
 
 def checkTables ():
     #Function to check if table exists to hold data
-    repcur.execute("CREATE TABLE IF NOT EXISTS reports (ruleBroke text, value text, length int, datePlusTime datetime default current_timestamp);")
+    repcur.execute("CREATE TABLE IF NOT EXISTS reports (mac text, ruleBroke text, value text, length int, datePlusTime datetime default current_timestamp, PRIMARY KEY (mac, ruleBroke, value));")
 
 ##########################################
 # Report Gen
@@ -92,18 +92,15 @@ def data_IN(mac):
 		inBytes = results[hour][0] - results[hour-1][0]
 	else:
 		inBytes = results[hour][0] - results[23][0]
-	print inBytes
 	return inBytes
 
 def data_OUT(mac):
 	cur.execute("SELECT dataOUT FROM dataRate WHERE monitorMAC = ? ORDER BY hour ASC", (mac,))
 	results = cur.fetchall()
-	print results
 	if hour > 0:
 		outBytes = results[hour][0] - results[hour-1][0]
 	else:
 		outBytes = results[hour][0] - results[23][0]
-	print outBytes
 	return outBytes
 
 
@@ -126,45 +123,47 @@ def max_data(mac):
 # Defines behaviour for comparing reports
 ####################################
 
-def compare(old, new):
-	ipCompare(old, new)
-	portCompare(old, new)
-	#if hour != getHour():
-	dataUsage(old, new)
-	setHour()
+def compare(mac, old, new):
+	ipCompare(mac, old, new)
+	portCompare(mac, old, new)
+	if hour != getHour():
+		dataUsage(mac, old, new)
 
-def ipCompare(old, new):
+def ipCompare(mac, old, new):
 	if "IPs" in old:
 		for item in new["IPs"]:
 			if item not in old["IPs"]:
 				pos = new["IPs"].index(item)
 				data = new["IPLen"][pos]
-				ruleBroke("IP", item, data)
+				ruleBroke(mac, "New IP Address", item, data)
 
-def portCompare(old, new):
+def portCompare(mac, old, new):
 	if "ports" in old:
 		for item in new["ports"]:
 			if item not in old["ports"]:
 				pos = new["ports"].index(item)
 				data = new["portLen"][pos]
-				ruleBroke("Port", item, data)
+				ruleBroke(mac, "New Port number used", item, data)
 
-def dataUsage(old, new):
-	if "dataIN" in old and "dataOUT" in old:
+def dataUsage(mac, old, new):
+	if "dataIN" in old and "dataOUT" in old and new["dataIN"] > 0:
 		oldRatio = float(old["dataOUT"][0]) / old["dataIN"][0]
 		newRatio = float(new["dataOUT"]) / new["dataIN"]
 		diffRatio = oldRatio/newRatio
-		print diffRatio
-		print oldRatio
-		print newRatio
 		if (diffRatio - 1.0) > changeRatio:
-			ruleBroke("Unexpected behvaiour", "Too much data sent" , diffRatio)
+			ruleBroke(mac, "Unexpected behaviour", "Too much data sent" , diffRatio)
 		elif(diffRatio  - 1.0) < changeRatio:
-			ruleBroke("Unexpected behvaiour", "Too much data received" , diffRatio)
+			ruleBroke(mac, "Unexpected behaviour", "Too much data received" , diffRatio)
 
-def ruleBroke(rule, value, data):
-	repcur.execute("UPDATE reports SET length = length + ? WHERE ruleBroke = ? AND value = ?", (data, rule, value))
-	repcur.execute("INSERT OR IGNORE INTO reports (ruleBroke, value, length) VALUES (?,?,?)", (rule, value, data))
+def maxData(mac, old, new):
+	if "max" in old and new["max"] > 0:
+		ratio = float(old["max"]) / new["max"]
+		if (ratio - 1.0) > changeRatio:
+			ruleBroke(mac, "Large traffic flow", "Too much traffic on device", changeRatio)
+
+def ruleBroke(mac, rule, value, data):
+	repcur.execute("UPDATE reports SET length = ? WHERE mac = ? AND ruleBroke = ? AND value = ?", (data, mac, rule, value))
+	repcur.execute("INSERT OR IGNORE INTO reports (mac, ruleBroke, value, length) VALUES (?,?,?,?)", (mac, rule, value, data))
 
 checkTables()
 
@@ -175,7 +174,8 @@ while True:
 		curReport = generate_Report(item)
 		file = open('/usr/lib/smartwall/reports/active/' + item).read()
 		definedRep = json.loads(file)
-		compare(definedRep, curReport)
+		compare(item, definedRep, curReport)
+	setHour()
 
 	rep.commit()
 	time.sleep(refresh_rate)

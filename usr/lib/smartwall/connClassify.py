@@ -140,6 +140,7 @@ def pushHourTotals(hour):
     for item in macList:
         cur.execute("SELECT SUM(a.length), SUM(b.length) FROM connectionHistory a, connectionHistory b WHERE a.connection = 'Inbound' AND b.connection = 'Outbound' AND a.monitorMAC = b.monitorMAC AND a.toIP = b.toIP AND a.port = b.port AND a.monitorMAC = ? AND a.toIP NOT LIKE '192.168.%' AND a.toIP NOT LIKE '10.%' AND a.toIP NOT LIKE '172.[0-9].%' AND a.toIP NOT LIKE '172.[1-2][0-9].%' AND a.toIP NOT LIKE '172.3[1-2].%';", (item,))
         val = cur.fetchone()
+        print val
         if val[0] != None and val[1] != None:
             size = val[0] + val[1]
         else:
@@ -167,8 +168,7 @@ dataRateInit()
 nmapGen()
 
 #begin running the tcpdump subprocess piping output to stdout
-proc = sub.Popen(('tcpdump', '-l', '-n', '-t', '-q', '-i', 'br-lan', '-e', '-B', '262144', '-s', '128', 'tcp', 'or', 'udp'), stdout=sub.PIPE)
-
+proc = sub.Popen(('tcpdump', '-l', '-n', '-t', '-q', '-i', 'br-lan', '-e', '-B', '65536', '-s', '128', 'tcp', 'or', 'udp'), stdout=sub.PIPE)
 
 with proc.stdout:
 	
