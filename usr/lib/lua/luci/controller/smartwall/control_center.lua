@@ -6,6 +6,7 @@ luasql = require 'luasql.sqlite3'
 sql = assert (luasql.sqlite3())
 -- Establish connection to database
 db = assert(sql:connect('/tmp/connections.db'))
+repdb = assert(sql:connect('/tmp/reports.db'))
 -- Connect to config file
 configFile = "/etc/config/cbi_file"	
 -- json module
@@ -21,6 +22,21 @@ function index()
 	page.leaf = true
 
 	page = entry({"admin", "smart_tab", "report_call"}, call("report_call"), nil)
+	page.leaf = true
+
+	page = entry({"admin", "smart_tab", "get_active"}, call("get_active"), nil)
+	page.leaf = true
+
+	page = entry({"admin", "smart_tab", "add_active"}, call("add_active"), nil)
+	page.leaf = true
+
+	page = entry({"admin", "smart_tab", "remove_active"}, call("remove_active"), nil)
+	page.leaf = true
+
+	page = entry({"admin", "smart_tab", "active_report_call"}, call("active_report_call"), nil)
+	page.leaf = true
+
+	page = entry({"admin", "smart_tab", "return_report_table"}, call("return_report_table"), nil)
 	page.leaf = true
 
 end
@@ -41,7 +57,7 @@ function get_data(mac)
 	-- initialise variables
 	local index, list = 0, {}
 	-- Create sql statement to be run
-	local sql = string.format('SELECT * FROM dataRate WHERE monitorMAC = "%s" ORDER BY hour;', mac)
+	local sql = string.format('SELECT *, ROUND(dataSize/4294967296.0) AS bitNum FROM dataRate WHERE monitorMAC = "%s" ORDER BY hour;', mac)
 	-- Run statement
 	local currResults = assert(db:execute(sql))
 	-- Get first row of results
@@ -85,4 +101,97 @@ function report_generate(mac)
 		return jsonObj
 	end
 	return nil
+end
+
+function active_report_call()
+	local mac = luci.http.formvalue("mac")
+	local command = luci.http.formvalue("command")
+	local results = assert(active_report_generate(mac, command))
+
+	if results then
+		luci.http.prepare_content("application/json")
+		luci.http.write_json(results)
+		return
+	end
+end
+
+function active_report_generate(mac, command)
+	path = "/usr/lib/smartwall/reports/active/" .. mac
+	command = "python /usr/lib/smartwall/reportGen.py " .. mac .. " " .. command
+	os.execute(command)
+
+	local file = io.open(path, "r")
+	if file then
+		return true
+	end
+	return false
+end
+
+function get_active_report()
+
+end
+
+function get_active()
+
+	local f = io.popen("ls /usr/lib/smartwall/reports/active")
+	local list, count = {}, 0
+	if f then
+	    while true do
+	    	local line = f:read("*line")
+	    	if line == nul or line == "" then 
+				break
+			else
+				count  = count +1
+				local mac = string.match(line, "%w+:%w+:%w+:%w+:%w+:%w+")
+				if mac ~= "" then
+					list[count] = mac
+				end
+			end
+		end
+	if #list > 0 then
+		luci.http.prepare_content("application/json")
+		luci.http.write_json(list)
+		return
+	end
+
+	else
+	    print("failed to read")
+	end
+end
+
+function add_active()
+	local mac = luci.http.formvalue("mac")
+	local macFix = string.sub(mac, 1, 2) .. "\:" .. string.sub(mac, 4, 5) .. "\:" .. string.sub(mac, 7, 8) .. "\:" .. string.sub(mac, 10, 11) .. "\:" .. string.sub(mac, 13)
+	local command = "mv /usr/lib/smartwall/reports/" .. macFix .. " /usr/lib/smartwall/reports/active"
+
+	os.execute(command)
+end
+
+function remove_active()
+	local mac = luci.http.formvalue("mac")
+	local command = "rm /usr/lib/smartwall/reports/active/" .. mac
+
+	os.execute(command)
+end
+
+function return_report_table()
+	local mac = luci.http.formvalue("mac")
+	local sql = string.format('SELECT * FROM reports WHERE mac = "%s" ORDER BY datePlusTime DESC', mac)
+
+	local results = assert(repdb:execute(sql))
+	local row = results:fetch({}, "a")
+	local list = {}
+	local index = 0
+
+	while row do
+		index = index + 1
+		list[index] = row
+		row = results:fetch({}, "a")
+	end
+
+	if #list > 0 then 
+		luci.http.prepare_content("application/json")
+		luci.http.write_json(list)
+		return
+	end
 end

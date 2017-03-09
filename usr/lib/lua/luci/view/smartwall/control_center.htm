@@ -2,10 +2,14 @@
 <script src="/luci-static/resources/jquery-3.1.1.min.js"></script>
 <script src="/luci-static/resources/Chart.js"></script>
 <h1><%:Control Center%></h1>
+<p>The control center shows statistics for all the monitored devices on your network. The graphs shows how you devices connections to the external internet fluctuates over time. With the behaviour system, you have granular control over how your device connects to the internet. This ignores how your device chooses to talk to devices in your home.</p>
 
 <script type ="text/javascript">
 
 	var interpreter = new XHR();
+	var activeMACs = [];
+	var resultObj = {};
+	var blockedChart;
 	var portDictionary = {"20":"FTP","21":"FTP","22":"SSH", "23":"Telnet", "25": "SMTP", "53": "DNS", "67":"DHCP", "68":"DHCP", "80":"HTTP", "110":"POP", "123":"NTP", "137":"NetBIOS", "138":"NetBIOS", "139":"NetBIOS", "143":"IMAP", "161":"SNMP", "162":"SNMP", "179":"BGP", "389":"LDAP", "443":"HTTPS", "636":"LDAPS", "989":"FTP w/TLS", "990":"FTP w/TLS"};
 
 	function get_Port_Usage(port){
@@ -19,13 +23,49 @@
 		return "";
 	}
 
+	function get_active(){
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "get_active")%>', null,
+			function(_, MACs){
+				var actives = MACs;
+				set_active(actives);
+			})
+	}
+
+	function set_active(actives){
+		activeMACs = actives;
+		var allDevReps = document.getElementsByClassName("reportStat");
+		for(var j = 0; j < allDevReps.length; j++){
+			allDevReps[j].style.backgroundColor = "#FF5555";
+			allDevReps[j].innerHTML = "Not Monitored";
+		}
+
+		var allBoxs = document.getElementsByClassName("boxDiv");
+
+		if(actives){
+			for(var i = 0; i < actives.length; i++){
+				var idRep = "repStat" + actives[i];
+				var idRMButton = "rm" + actives[i];
+				var objRep = document.getElementById(idRep);
+				if (objRep){
+					objRep.style.backgroundColor = "#55FF55";
+					objRep.innerHTML = "Monitoring";
+				}
+				var objButton = document.getElementById(idRMButton);
+				if(objButton){
+					objButton.style.display = "inline";
+				}
+			}
+		}
+		
+	}
+
 	function bytesToSize(byteSize) {
    		var sizeResults = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
    		if (byteSize == 0){
    			return '0 Byte';
    		}
-   		var i = parseInt(Math.floor(Math.log(byteSize) / Math.log(1024)));
-   		var res = Math.round(byteSize / Math.pow(1024, i), 2) + ' ' + sizeResults[i];
+   		var i = parseFloat(parseInt(Math.floor(Math.log(byteSize) / Math.log(1024))));
+   		var res = (parseFloat(byteSize) / parseFloat(Math.pow(1024, i))).toFixed(1) + ' ' + sizeResults[i];
    		return res;
 	};
 
@@ -33,18 +73,24 @@
 		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "connections_select")%>', null,
 			function(_, MACs){
 				var results = MACs;
-				console.log(results);
 				var divWrite = '';
 
 				for (var i = 0; i < results.length; i++){
 					var mac = results[i];
-					console.log(i)
+
 					if (mac != ''){
 						divWrite += '<div class = "boxDiv"><h3 style="float:left">' + mac.devName + ' - </h3><h5 style="float:left"><i> ' + mac.devMAC + '</i></h5>';
 					}
+					//CHART
 					divWrite += '<canvas id="chart' + mac.devMAC + '" class = "historyChart"></canvas>';
-					divWrite += '<input class = "reportButton" type = "button" onclick= "get_report(\'' + mac.devMAC + '\',\'' + mac.devName + '\')" value = "Behaviour" style - "float:right;"/>';
-					divWrite += '<input class = "reportButton" type = "button" value = "SSH Test" style = "float:right;"/>';
+					//STATUS BAR
+					divWrite += '<div id="repStat' + mac.devMAC + '" class = "reportStat">Not Running</div>';
+					//BUTTONS
+					divWrite += '<div class = "buttonDiv">' + '<div class ="lineBreak"></div>' + '<h5 style ="text-align:center">Menu</h5>';
+					divWrite += '<input class = "reportButton" type = "button" onclick= "get_report(\'' + mac.devMAC + '\',\'' + mac.devName + '\')" value="View Connections" style = "width:40%;float:left;"/>';
+
+					divWrite += '<input class = "reportButton" type = "button" onclick="open_monitoring(\'' + mac.devMAC + '\', \'' + mac.devName + '\')" value = "Monitoring Page" style = "width:40%;float:right;"/>';
+					divWrite += '</div>'
 					divWrite += '</div>';
 				}
 
@@ -149,11 +195,16 @@
 
 	function format24(results){
 
+		if(results == null){
+			return []
+		}
+
 		var d = new Date();
 		var n = d.getHours();
-
+		for(var i = 0; i < results.length; i++){
+			results[i].dataSize = results[i].dataSize + 4294967296 * results[i].bitNum;
+		}
 		var newResults = results.slice(n+1).concat((results.slice(0, n+1)));
-		console.log(newResults);
 		return newResults;
 	}
 
@@ -162,7 +213,7 @@
 		for(var i = 0; i< results.length; i++){
 			dataList.push(results[i].dataSize);
 		}
-		for(var j = 1; j<dataList.length; j++){
+		for(var j = dataList.length-1; j>0; j--){
 			if (dataList[j] < dataList[j-1]){
 				dataList[j] = 0;
 			}
@@ -170,43 +221,179 @@
 				dataList[j]= dataList[j]-dataList[j-1]
 			}
 		}
-		console.log(dataList);
+		dataList[0] = 0; 
 		return dataList;
 	}
 
 	function get_report(mac, name){
-		var resultObj;
+		document.getElementById("connHeader").innerHTML += " - " + name;
 		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "report_call")%>', {mac:mac},
 			function(_, res){
 				resultObj = res;
 				if (resultObj != null){
 					
-					open_report();
 					var dataIN = bytesToSize(resultObj.dataIN);
 					var dataOUT = bytesToSize(resultObj.dataOUT);
 					var serviceList = get_services(resultObj);
 					var unnamedservList = get_unnamed_services(resultObj);
-					console.log(serviceList);
-					var reportHtml = "<h1>Behaviour Report</h1>";
-					reportHtml += '<p class ="content">Number of addresses: ' + resultObj.IPs.length + '</p>'
-								+ '<p class ="content">Most common port: ' + resultObj.ports[0] + '</p>'
-								+ '<p class ="content">Data received: ' + bytesToSize(resultObj.dataIN) + '</p>'
-								+ '<p class ="content">Data sent: ' + bytesToSize(resultObj.dataOUT) + '</p>'
-								+ '<p class ="content">Services used: ' + list_format(serviceList) + '</p>'
-								+ '<p class ="content">Unnamed ports used: ' + list_format(unnamedservList) + '</p>'
+					var header = '<h3>'+ name + '</h3>';
+					var reportTable = '<table id="reportTable" class="cbi-section-table"><tbody>'
+								+'<tr><th style="width:25%;">Public IPs</th><td style="width:25%;">'+ resultObj.IPs.length +'</td>'
+								+'<td style="width:25%;text-align:right;">'+ resultObj.privIPs.length +'<th style="width:25%;text-align:right;">Private IPs</th></tr>'
+								+'<tr><th>Public Ports used</th><td>'+ resultObj.ports.length +'</td>'
+								+'<td style="text-align:right;">'+ resultObj.privPorts.length +'</td><th style="text-align:right;">Private Ports used</th></tr>' 
+								+'<tr><th>Data sent externally</th><td>' + bytesToSize(resultObj.dataOUT) + '</td>'
+								+'<td style="text-align:right;">'+ bytesToSize(resultObj.privdataOUT) +'</td><th style="text-align:right;">Data Sent Locally</th></tr>'
+								+'<tr><th>Data received externally</th><td>' + bytesToSize(resultObj.dataIN) + '</td>'
+								+'<td style="text-align:right;">'+ bytesToSize(resultObj.privdataIN) +'</td><th style="text-align:right;">Data Received Locally</th></tr>'
+								+'</tbody></table>'
+								+ '<p>Limit connections will input new rules into your ipTables to prevent your device from anything other than what it has seen before. This will ignore devices on the local network and allow them to still communicate freely though.</p>'
 
-					var buttons = '<input class = "behaviourButton" type = "button" onclick="open_behaviour()" value = "Set behaviour" style = "float:right;"/>';
-					document.getElementById("report_content").innerHTML = reportHtml + buttons
+					var buttons = connpage_suffix(mac)
+					document.getElementById("connections_content").innerHTML = header + reportTable;
+
 				}
 				else{
 					alert("No data to show");
 				}
 			});
+	};
+
+	function connpage_suffix(mac){
+		var suffix = document.getElementById("connections_suffix");
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "get_rules")%>', 
+			{mac:mac},
+			function(_, res){
+				console.log(res)
+				if(res != null && res.length > 1){
+					document.getElementById("blockedHeader").style.display = "block";
+
+					var button = '<input class = "behaviourButton" type = "button" onclick="unblock_connections(\'' + mac + '\')" value = "Unlimit connections" style = "float:right;"/>';
+					var table = '<br><h5>IPtable Rules</h5>' + '<input class = "behaviourButton" type = "button" onclick="toggle_iptable()" value="Toggle table"/>' + '<table id="iptTable" class="cbi-section-table" style="display:none;"><tbody>' + '<tr><th>Index</th><th>IP Blocked</th><th>Accept/Drop</th><th>Packets</th></tr>';
+					for(var i = 0; i < res.length; i++){
+						var acc = "ACCEPT";
+						if(res[i].target == "DROP"){
+							acc = "DROP";
+						}
+						table += '<tr class = "conn-cell"><td>' + i + '</td><td>' + res[i].destination + '</td><td>' + acc + '</td><td>' + res[i].packets + '</td></tr>'
+					}
+					table += '</tbody></table>'
+					suffix.innerHTML = button + table;
+					colour_conn_cells();
+					block_table(res);
+					open_conns();
+				}
+				else if(!res.complete){
+					suffix.innerHTML = '<input class = "behaviourButton" type = "button" onclick="block_connections(\'' + mac + '\')" value = "Limit connections" style = "float:right;"/>';
+					open_conns();
+				}
+				else{
+					suffix.innerHTML = '<input class = "behaviourButton" type = "button" onclick="block_connections(\'' + mac + '\')" value = "Limit connections" style = "float:right;"/>';
+					open_conns();
+				}
+			});
+	};
+
+	function toggle_iptable(){
+		var table = document.getElementById("iptTable")
+		if(table.style.display != "none"){
+			console.log("none")
+			table.style.display = "none"
+		}
+		else{
+			console.log("test")
+			table.style.display = "inline-table"
+		}
+	};
+
+	function block_table(results){
+		var accepted = 0;
+		var dropped = 0;
+
+		for(var i=0; i<results.length; i++){
+			if(results[i].target != "DROP"){
+				accepted += results[i].packets;
+			}
+			else{
+				dropped += results[i].packets;
+			}
+		}
+
+		var ctx = document.getElementById("blockedChart");
+
+		var data = {
+			labels: ["Accepted", "Dropped"],
+			datasets:[
+				{
+					backgroundColor:[
+					'rgba(0,255,0,0.2)',
+					'rgba(255,0,0,0.2)'
+					],
+					borderColor:[
+					'rgba(0,255,0,1)',
+					'rgba(255,0,0,1)'
+					],
+					borderWidth: 1,
+					data: [accepted, dropped],
+				}
+			]
+		};
+
+		blockedChart = new Chart(ctx, {
+			type: 'horizontalBar',
+			data: data,
+			options: {
+				legend:{
+					display:false,
+				},
+		        scales: {
+		            xAxes: [{
+		                stacked: true
+		            }],
+		            yAxes: [{
+		                stacked: true
+		            }]
+		        }
+		    }		
+		});
+
+
+		console.log(accepted + " " + dropped);
 	}
+
+	function block_connections(mac){
+		console.log(resultObj)
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "init_chain")%>', 
+			{mac:mac},
+			function(_, res){
+				if(res != null && res.complete){
+					alert("Blocked connections successfully")
+					close_conns()
+				}
+				else{
+					console.log("error")
+				}
+			});
+	};
+
+	function unblock_connections(mac){
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "destruct_chain")%>', 
+			{mac:mac},
+			function(_, res){
+				if(res != null && res.complete){
+					alert("Unblocked connections successfully")
+					close_conns()
+				}
+				else{
+					console.log("error")
+					close_conns()
+				}
+			});
+	};
 
 	function get_services(report){
 		var serviceList = [];
-		console.log(report);
+
 		for(var i = 0; i < report.ports.length; i++){
 			var port = report.ports[i];
 			if(portDictionary[port] != undefined){
@@ -218,7 +405,7 @@
 
 	function get_unnamed_services(report){
 		var serviceList = [];
-		console.log(report);
+
 		for(var i = 0; i < report.ports.length; i++){
 			var port = report.ports[i];
 			if(portDictionary[port] == undefined){
@@ -231,8 +418,13 @@
 	function list_format(list){
 		if(list.length > 0){
 			var stringList = "<br>-" + list[0];
-			for(var i = 1; i < list.length; i++){
+			var min = Math.min(list.length, 10);
+			var rem = list.length -10;
+			for(var i = 1; i < min; i++){
 				stringList += "<br>-"+ list[i];
+				if(i == 9){
+					stringList += "<br>"+ "<i>Plus " + rem + " more</i>"
+				}
 			}
 			return stringList
 		}
@@ -242,138 +434,317 @@
 		
 	}
 
-	function open_report(){
-		document.getElementById("report_overlay").style.width = "100%";
+	function add_device(mac){
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "add_active")%>', {mac:mac},
+			function(_, res){
+				get_active()
+			});
 	}
 
-	function close_report(){
-		document.getElementById("report_overlay").style.width = "0%";
+	function rem_device(mac){
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "remove_active")%>', {mac:mac},
+			function(_, res){
+				get_active();
+				alert("Monitoring stopped on this device");
+				close_monitoring();
+			});
 	}
 
-	function open_behaviour(){
-		document.getElementById("behaviourOverlay").style.width = "100%"
+
+	function open_conns(){
+		document.getElementById("connectionsPage").style.display = "block";
+		document.getElementById("devicesDiv").style.display = "none";
 	}
 
-	function close_behaviour(){
-		document.getElementById("behaviourOverlay").style.width = "0%"
+	function close_conns(){
+		blockedChart.destroy();
+		document.getElementById("blockedHeader").style.display = "none";
+		document.getElementById("connectionsPage").style.display = "none";
+		document.getElementById("devicesDiv").style.display = "block";
+	}
+
+	function open_monitoring(mac, name){
+		document.getElementById("monHeader").innerHTML += " - " + name; 
+		if (activeMACs != null && activeMACs.includes(mac)){
+			var content = '';
+			var button = '<input class = "behaviourButton" type = "button" onclick= "rem_device(\'' + mac + '\')" value = "Stop Monitoring"/>';
+			interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "return_report_table")%>', {mac:mac},
+			function(_, res){
+				var resultObj = res;
+				var table = '';
+				if(resultObj != null && resultObj.length > 0){
+					table = '<table id="reportTable" class="cbi-section-table"><tbody>'
+					table += '<tr><th style="width:28%">Rule</th><th style="width:28%">Value</th><th style="width:28%">Length</th><th style="width:16%">Time</th></tr>'
+					for(var i=0; i<resultObj.length;i++){
+						if(resultObj[i].ruleBroke == "New IP Address" || resultObj[i].ruleBroke == "New Port number used"){
+							table += '<tr class="ip-cell"><td>' + resultObj[i].ruleBroke + '</td><td>' + resultObj[i].value + '</td><td>' + bytesToSize(resultObj[i].length) + '</td><td>' + resultObj[i].datePlusTime + '</td></tr>';
+						}
+						else if(resultObj[i].ruleBroke == "Unexpected behaviour" || resultObj[i].ruleBroke == "Large traffic flow"){
+							table += '<tr class="ip-cell"><td>' + resultObj[i].ruleBroke + '</td><td>' + resultObj[i].value + '</td><td>' + Math.round(resultObj[i].length*100) + '%' + '</td><td>' + resultObj[i].datePlusTime + '</td></tr>';
+						}
+					}
+					table += '</tbody></table>';
+					content += table;
+					monitoring_visible(content + button);
+				}
+				else if(resultObj == null){
+					table = '<table id="reportTable" class="cbi-section-table"><tbody>'
+					table += '<tr><th style="width:28%">Rule</th><th style="width:28%">Value</th><th style="width:28%">Length</th><th style="width:16%">Time</th></tr>'
+					table += '<tr class="ip-cell"><td>' + "No results to display" + '</td><td>' + "Device is behaving as intended" + '</td><td>' + "-" + '</td><td>' + "-" + '</td></tr>';
+
+					table += '</tbody></table>';
+					content += table;
+					monitoring_visible(content + button);
+				}
+				else{
+					monitoring_visible(content + button);
+				}
+			});			
+		}
+		else{
+			var content = '<p>Monitoring on this device is not yet set up. The montioring feature allows you to see connections and behaviour patterns your device is performing that have not been seen before. You can specify if you want to monitor the IPs a device connects to, port numbers used to communicate and the inflow and outflow of data relative to previous data</p>'
+			content += '<p>To set up the reporting, please click on what you want to monitor below:</p>'
+			interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "report_call")%>', {mac:mac},
+			function(_, res){
+				resultObj = res;
+				content += '<input class = "monButton" id="ipSel" type = "button" onclick= "selected(\'ipSel\')" style="float:left;background-color: rgba(255,0,0,0.2);" value = "IP Addresses"/>'
+						+ '<input class = "monButton" id="portSel" type = "button" onclick= "selected(\'portSel\')" style="float:right;background-color: rgba(255,0,0,0.2);" value = "Ports"/>'
+						+ '<input class = "monButton" id="dataSel" type = "button" onclick= "selected(\'dataSel\')" style="float:left;background-color: rgba(255,0,0,0.2);" value = "Data in/out ratio"/>'
+						+ '<input class = "monButton" id="maxSel" type = "button" onclick= "selected(\'maxSel\')" style="float:right;background-color: rgba(255,0,0,0.2);" value = "Max data"/>';
+						+ '<p>Choose which areas you want to monitor then click start monitoring below</p>'
+				button = '<input class = "monButton" type = "button" onclick="start_active(\'' + mac + '\')" style="margin-left:27.5%" value="Start Monitoring"/>';
+				monitoring_visible(content + button);
+			});
+		}
+		
+	}
+
+	function selected(id){
+		var element = document.getElementById(id)
+		if (element.style.backgroundColor == "rgba(255, 0, 0, 0.2)"){
+			element.style.backgroundColor = "rgba(0, 255, 0, 0.2)"
+		}
+		else if (element.style.backgroundColor == "rgba(0, 255, 0, 0.2)"){
+			element.style.backgroundColor = "rgba(255, 0, 0, 0.2)"
+		}
+	}
+
+	function start_active(mac){
+		var command = selected_command();
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "active_report_call")%>', {
+			mac:mac,
+			command:command},
+			function(_,res){
+				if(res){
+					alert("Monitoring started");
+					close_monitoring();
+					get_active();	
+				}
+			});
+	}
+
+	function selected_command(){
+		var command = ""
+		var buttons = document.getElementsByClassName("monButton");
+		for(var i=0; i<buttons.length; i++){
+			if(buttons[i].style.backgroundColor == "rgba(0, 255, 0, 0.2)"){
+				command += buttons[i].id[0];
+			}
+		}
+		return command;
+	}
+		
+	function monitoring_visible(content){
+		document.getElementById("monitoring_content").innerHTML = content;
+		colour_mon_cells();
+		document.getElementById("monitoringPage").style.display = "block";
+		document.getElementById("devicesDiv").style.display = "none";
+	}
+
+	function colour_mon_cells(){
+		var tableRows = document.getElementsByClassName("ip-cell");
+		if(tableRows != null){
+			for(var i=0;i < tableRows.length; i++){
+				var row = tableRows[i];
+				if(row.cells[0].innerHTML == "New IP Address"){
+					for(var j = 0; j < row.cells.length; j++){
+						row.cells[j].style.backgroundColor = "rgba(75,192,75,0.2)";
+					}
+				}
+				if(row.cells[0].innerHTML == "New Port number used"){
+					for(var j = 0; j < row.cells.length; j++){
+						row.cells[j].style.backgroundColor = "rgba(190,56,89,0.2)";
+					}
+				}
+				if(row.cells[0].innerHTML == "Large traffic flow"){
+					for(var j = 0; j < row.cells.length; j++){
+						row.cells[j].style.backgroundColor = "rgba(0,0,200,0.2)";
+					}
+				}
+				if(row.cells[0].innerHTML == "Unexpected behaviour"){
+					if(row.cells[1].innerHTML == "Too much data sent"){
+						for(var j = 0; j < row.cells.length; j++){
+							row.cells[j].style.backgroundColor = "rgba(68,23,100,0.2)";
+						}
+					}
+					if(row.cells[1].innerHTML == "Too much data received"){
+						for(var j = 0; j < row.cells.length; j++){
+							row.cells[j].style.backgroundColor = "rgba(255,32,255,0.2)";
+						}
+					}
+				}
+			}
+		}
+	}
+
+	function colour_conn_cells(){
+		var tableRows = document.getElementsByClassName("conn-cell");
+		console.log(tableRows)
+		if(tableRows != null){
+			for(var i=0;i < tableRows.length; i++){
+				var row = tableRows[i];
+				if(row.cells[2].innerHTML == "ACCEPT"){
+					for(var j = 0; j < row.cells.length; j++){
+						row.cells[j].style.backgroundColor = "rgba(0,255,0,0.2)";
+					}
+				}
+				if(row.cells[2].innerHTML == "DROP"){
+					for(var j = 0; j < row.cells.length; j++){
+						row.cells[j].style.backgroundColor = "rgba(255,0,0,0.2)";
+					}
+				}
+			}
+		}
+	}
+
+	function close_monitoring(){
+		document.getElementById("monitoringPage").style.display = "none";
+		document.getElementById("devicesDiv").style.display = "block";
 	}
 
 
 </script>
 <style>
-.historyChart{
-	margin-top: 50px;
-	margin-bottom: -50px;
-}
+	.monButton{
+		width: 45% !important;
+		background-color: #FFFFFF;
+		border: 2px solid #AAAAAA; 
+		font-size: 20px;
+		font-weight: bold;
+		margin-top: 20px;
+		padding: 1%;
+	}
 
-.reportButton {
-	margin-top: 60px;
-	position: relative;
-}
+	.historyChart{
+		margin-top: 50px;
+	}
 
-.behaviourButton{
-	position: absolute;
-	bottom: 20px;
-}
+	.sep{
+		background-color: #555555;
+	}
 
-.boxDiv {
-	position: relative;
-	width: 45%;
-	margin-right:2.5%;
-	margin-bottom: 10px;
-    height: 50%;
-    float: left;
-    border-radius: 25px;
-    border: 2px solid #AAAAAA;
-    padding:1%;
-    transition: 1s
+	.buttonDiv{
+		padding-top: 60px;
+	}
 
-}
+	.reportButton {
+		font-weight: bold;
+		color: #222222;
+		background-color: #FFFFFF;
+		box-shadow: none;
+		margin-right: 4%;
+		margin-left: 4%;
+		margin-bottom: 8px;
+		position: relative;
+		padding: 8px;	
+	}
 
-.devicesDiv {
-	padding-bottom: 100px;
-}
+	.lineBreak{
+		margin-left: 5%;
+		margin-right: 5%;
+		background-color: #999999;
+		height: 1px;
+	}
 
-.overlay{
-	height: 100%;
-	width: 0;
-	position: fixed;
-	z-index:; 1;
-	left: 0;
-	top: 0;
-	background-color: rgba(0,0,0,0.5);
-	overflow-x:hidden;
-	transition: 0.2s;
+	.reportButton:hover{
+		box-shadow: 1px 1px 3px #666666;
+	}
 
-}
-.overlay .overlayClose{
-	position: absolute;
-	top: 50px;
-	right: 50px;
-	font-size: 50px;
-	color: #FFFFFF;
+	.reportStat {
+		height: 20px;
+		width: 80%;
+		margin-right: 10%;
+		margin-left: 10%;
+		background-color: #FF5555;
+		border-radius: 25px;
+		margin-bottom:-40px;
+		text-align: center;
+	}
 
-}
+	.boxDiv {
+		position: relative;
+		width: 45%;
+		margin-right:2.5%;
+		margin-bottom: 10px;
+	    height: 50%;
+	    float: left;
+	    border-radius: 25px;
+	    border: 2px solid #AAAAAA;
+	    padding:1%;
+	    transition: 1s
 
-.overlay a:hover{
-	color: #A1A1A1;
-	cursor: pointer;
-	text-decoration: none;
-	transition: 0.5s;
-}
+	}
 
-.overlayContent{
-	position: absolute;
-	padding: 50px;
-	width: 50%;
-	height: 60%;
-	margin:auto;
-	top: 0;
-	left: 0;
-	right: 0;
-	bottom: 0;
-	background-color: rgb(255,255,255);
-	border-radius: 25px;
-}
+	.devicesDiv {
+		padding-bottom: 100px;
+	}
 
-.behaviourButton{
-	background-color: #FFFFFF;
-	border: 1px solid #AAAAAA; 
-}
+	.behaviourButton{
+		background-color: #FFFFFF;
+		border: 1px solid #AAAAAA; 
+	}
 
-.reportText{
-	padding-top: 70px;
-	font-size: 30px;
-}
+	.reportText{
+		padding-top: 70px;
+		font-size: 30px;
+	}
 
-.reportVal{
-	font-size: 40px;
-}
-/*Override default footer settings*/
-footer{
-	border-top: 0px;
-}
+	.reportVal{
+		font-size: 40px;
+	}
+
+	.page{
+		margin-top: 40px;
+	}
+	.blocked{
+		margin-top:20px;
+		text-align: center;
+	}
+	
 </style>
 
-<div id = "devicesDiv">
-	
-	<h3>Devices</h3>
-	<div id = "resultsTable"></div>
-	<div id = "report_overlay" class = "overlay">
-		<a class = "overlayClose" onclick = "close_report()">&times;</a>
-		<div id = "report_content" class = "overlayContent">
-			
-		</div>
+<div style="width:100%">
+	<div id = "devicesDiv" class="page">
+		<h2>Devices</h2>
+		<div id = "resultsTable"></div>
 	</div>
-	<div id = "behaviourOverlay" class = "overlay">
-		<a class = "overlayClose" onclick = "close_behaviour()">&times;</a>
-		<div id = "behaviour_content" class = "overlayContent">
+
+	<div id = "connectionsPage" class = "page" style="display:none;">
+		<h2 id="connHeader">Connection Page</h2><br>
+		<input class = "backButton" type = "button" onclick="close_conns()" value = "Back" style="float:right;"/>
+		<div id = "connections_content" class = "overlayContent"></div>
+		<h2 id="blockedHeader" class="blocked" style="display:none;">New Connections Established</h2>
+		<canvas id="blockedChart" class="blocked" height="60"></canvas>
+		<div id = "connections_suffix" class = "overlayContent"></div>
+	</div>
+
+	<div id = "monitoringPage" class = "page" style="display:none;">
+		<h2 id="monHeader">Monitoring Page</h2><br>
+		<input class = "backButton" type = "button" onclick="close_monitoring()" value = "Back" style="float:right;"/>
+		<div id = "monitoring_content" class = "overlayContent"></div>
 	</div>
 </div>
 <script>
 	get_MACs()
+	get_active()
 </script>
-
-<div>
-	<%+footer%>
-</div>

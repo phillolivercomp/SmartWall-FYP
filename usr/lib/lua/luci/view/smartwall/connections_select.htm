@@ -27,9 +27,11 @@
 	var max;
 	var pages;
 	var globalMac = "";
+	var globalDev = "";
 	var toIPbreakdown = "";
 	var currPage;
 	var portChart;
+	var otherDevChart;
 	var portDictionary = {"20":"FTP","21":"FTP","22":"SSH", "23":"Telnet", "25": "SMTP", "53": "DNS", "67":"DHCP", "68":"DHCP", "80":"HTTP", "110":"POP", "123":"NTP", "137":"NetBIOS", "138":"NetBIOS", "139":"NetBIOS", "143":"IMAP", "161":"SNMP", "162":"SNMP", "179":"BGP", "389":"LDAP", "443":"HTTPS", "636":"LDAPS", "989":"FTP w/TLS", "990":"FTP w/TLS"};
 
 	function get_Port_Usage(port){
@@ -75,8 +77,8 @@
    		if (byteSize == 0){
    			return '0 Byte';
    		}
-   		var i = parseInt(Math.floor(Math.log(byteSize) / Math.log(1024)));
-   		var res = Math.round(byteSize / Math.pow(1024, i), 2) + ' ' + sizeResults[i];
+   		var i = parseFloat(parseInt(Math.floor(Math.log(byteSize) / Math.log(1024))));
+   		var res = (parseFloat(byteSize) / parseFloat(Math.pow(1024, i))).toFixed(1) + ' ' + sizeResults[i];
    		return res;
 	};
 
@@ -127,7 +129,7 @@
 			get_MACs();
 		}
 		else if(currPage == "macResults"){
-			get_Results(globalMac);
+			get_Results(globalMac, globalDev);
 		}
 		else if(currPage == "breakdown"){
 
@@ -158,6 +160,7 @@
 		// Set styling for table and buttons
 		globalPage = 0;
 		globalMac = "";
+		globalDev = "";
 		currPage = "";
 		document.getElementById("tableResults").style.opacity = 0.5;
 		document.getElementById("tableResults").style.pointerEvents = 'none';
@@ -183,7 +186,7 @@
 						if(mac != ''){
 
 							// Formula for table cell for each value which is clickable to run OpenResults method
-							listMACs += '<tr draggable = "true" onclick = "get_Results(\'' + mac.devMAC + '\')">'
+							listMACs += '<tr draggable = "true" onclick = "get_Results(\'' + mac.devMAC + '\', \'' + mac.devName + '\')">'
 								+ '<td class = "mac-cell" style = "width:55%;">'
 								+ mac.devName
 								+ '</td>'
@@ -217,11 +220,12 @@
 	};
 
 	// Function which takes MAC and with this generates results from SQL table representing connections
-	function get_Results(MAC) {
+	function get_Results(MAC, devName) {
 		updateTime();
 		document.getElementById("tableResults").style.opacity = 0.5;
 		document.getElementById("tableResults").style.pointerEvents = 'none';
 		globalMac = MAC;
+		globalDev = devName;
 		currPage = "macResults";
 
 
@@ -229,6 +233,7 @@
 		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "connections_list")%>', {MAC:MAC},
 			function(_, sql){
 				results = sql;
+				console.log(results);
 
 				// Calls open results (which will always be first page)
 				if (results != null){
@@ -286,14 +291,14 @@
 		var listConns = "<table id=\"sql-table\" class=\"cbi-section-table\"><tbody>";
 		listConns+= "<tr><th>To IP</th><th>Hostname</th><th>Connection frequency</th></tr>";
 
-		for (var index = startIndex; index < finalIndex; index++){
+		for (var index = startIndex; index <= finalIndex; index++){
 			var result = results[index];
 				if(result != ''){
 					result.renameHost = '<a class="renameOp btn show-on-hover" onclick="rename_IP(\''
 						+ result.toIP + '\',\'' +result.hostname
 						+ '\');">Rename</a>'
 					listConns += '<tr draggable = "true" onclick = "open_Breakdown(\''
-						+ result.toIP + '\', \'' + result.monitorMAC + '\')">'
+						+ result.toIP + '\', \'' + result.monitorMAC + '\', \'' + result.hostname + '\')">'
 						+ '<td class = "mac-cell" style = "width:25%;;">'
 						+ result.toIP
 						+ '</td>'
@@ -353,8 +358,16 @@
 		//If status is not 200, something has gone wrong, display error
 		if(data.geoplugin_status != 200){
 			var geoTable = "<table id=\"geoTable\" class=\"cbi-section-table\"><tbody>";
-			geoTable += '<tr><td class = "mac-cell">'
-					+ 'Unable to generate records for this table. Likely an internal IP Address</th></td>';
+			geoTable += '<tr><td class = "mac-cell"><b>Country</b></td>'
+					+ '<td class = "mac-cell">-</td></tr>'
+					+ '<tr><td class = "mac-cell"><b>Region</b></td>'
+					+ '<td class = "mac-cell">-</td></tr>'
+					+ '<tr><td class = "mac-cell"><b>City</b></td>'
+					+ '<td class = "mac-cell">-</td></tr>'
+					+ '<tr><td class = "mac-cell"><b>Latitude</b></td>'
+					+ '<td class = "mac-cell">-</td></tr>'
+					+ '<tr><td class = "mac-cell"><b>Longitude</b></td>'
+					+ '<td class = "mac-cell">-</td></tr>';
 
 			document.getElementById("geoTableDiv").innerHTML=geoTable;
 			document.getElementById("geoTableDiv").style.pointerEvents='auto';
@@ -363,9 +376,7 @@
 		//Else parse and display data into table
 		else{
 			var geoTable = "<table id=\"geoTable\" class=\"cbi-section-table\"><tbody>";
-			geoTable += '<tr><td class = "mac-cell"><b>IP Address</b></td>'
-					+ '<td class = "mac-cell">' + data.geoplugin_request + '</td></tr>'
-					+ '<tr><td class = "mac-cell"><b>Country</b></td>'
+			geoTable += '<tr><td class = "mac-cell"><b>Country</b></td>'
 					+ '<td class = "mac-cell">' + data.geoplugin_countryName + '</td></tr>'
 					+ '<tr><td class = "mac-cell"><b>Region</b></td>'
 					+ '<td class = "mac-cell">' + data.geoplugin_regionName + '</td></tr>'
@@ -383,10 +394,13 @@
 	}
 
 	//Takes IP and mac address and opens up Page to display relevant information about their relationship
-	function open_Breakdown(toIPAddress, MAC){
+	function open_Breakdown(toIPAddress, MAC, hostName){
+		console.log(hostName);
 		//Hide the tablePage and show resultsPage
 		document.getElementById("tablePage").style.display = "none";
 		document.getElementById("resultsPage").style.display = "block";
+		document.getElementById("reportHeader").innerHTML = globalDev + " connections to " + toIPAddress;
+		document.getElementById("reportSubHeader").innerHTML = hostName;
 		updateTime();
 		//Log what page we are on
 		currPage = "breakdown";
@@ -458,6 +472,7 @@
 					    }
 					});
 					genPortTable(breakDownResults);
+					genOtherDevicesTable(toIPbreakdown);
 				}
 			}
 		)		
@@ -466,12 +481,9 @@
 	function genPortTable(results){
 		var portTableContents = "<table id=\"portTable\" class=\"cbi-section-table\"><tbody>";
 		portTableContents+= "<tr><th>Port</th><th>Direction</th><th>Data sent</th></tr>";
-		console.log(results)
 		for(var i = 0; i < results.length; i++){
-			console.log(i);
 			result = results[i];
 			var usage = get_Port_Usage(result.port);
-			console.log(usage);
 			portTableContents += '<tr draggable = "true">'
 						+ '<td class = "mac-cell" style = "width:40%;;">'
 						+ usage + result.port
@@ -488,11 +500,97 @@
 		document.getElementById("tableBreakdown").innerHTML = portTableContents;
 	};
 
+	function genOtherDevicesTable(ip){
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "connections_select")%>', null,
+				function(_, MACs){
+						var devices = MACs;
+						console.log(devices);
+						genOtherHelper(devices, ip);
+				})
+	}
+
+	function genOtherHelper(macs, ip){
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "get_other")%>', {ip:ip},
+				function(_, res){
+						var history = res;
+						console.log(history);
+						var macList = {};
+						for(var i = 0; i < macs.length; i++){
+							var deviceName = macs[i].devName;
+							var macToFind = macs[i].devMAC;
+							var length = 0;
+							for(var j = 0; j < history.length; j++){
+								if(macToFind == history[j].monitorMAC){
+									length = history[j].len;
+								}
+							}
+							macList[deviceName] = length;
+						}
+						makeOtherDevChart(macList);
+				})
+	}
+
+	function makeOtherDevChart(obj){
+
+		var ctx = document.getElementById("otherDevChart");
+
+		var macKeys = Object.keys(obj);
+		var lenVals = Object.values(obj);
+		var backColours = colourListAlpha(macKeys.length, "0.2");
+		var borderColours = colourListAlpha(macKeys.length, "1.0");
+		var data = {
+			labels: macKeys,
+			datasets: [
+				{
+					label: "Other device usage",
+					backgroundColor: backColours,
+					borderColor: borderColours,
+					borderWidth: 1,
+					data: lenVals,
+				}
+			]
+		};
+		otherDevChart = new Chart(ctx, {
+	    		type: 'bar',
+	    		data: data,
+	    		options: {
+	    			legend: {
+    					display: false,
+					},
+	    			tooltips: {
+			        	callbacks: {
+			        		//Renames labels of the chart to read as file size not an int
+			        		label: function(tooltipItem, data) {
+			        			var tableContents = data.datasets[tooltipItem.datasetIndex].data;
+			        			var cellData =  tableContents[tooltipItem.index];
+			        			return bytesToSize(cellData);
+			        		}
+			        	}	
+			        },
+	        		scales: {
+	            		xAxes: [{
+	                		stacked: true
+	            		}],
+	            		yAxes: [{
+	                		stacked: true,
+	                		ticks: {
+						        callback: function (valuePayload) {
+									return bytesToSize(valuePayload);
+									}					
+						       }
+	            		}]
+	        		}
+        	}	
+		});
+	}
+
 	//Destroys chart and resets breakdown page
 	function clear_Breakdown(){
 		document.getElementById("geoTableDiv").innerHTML = "";
 		document.getElementById("portChart").innerHTML = "";
+		document.getElementById("otherDevChart").innerHTML = "";
 		portChart.destroy();
+		otherDevChart.destroy();
 	};
 
 	//Takes results and collects ports used with their lengths
@@ -533,40 +631,67 @@
 		return colourList;
 	};
 
+	function colourListAlpha(integerVal, transparency){
+		if(integerVal == 1){
+			return ["rgba(255, 0, 0, " + transparency + ")"]
+		}
+		var colourList = [];
+		var weightedVal = Math.ceil(510/(integerVal-1));
+		
+		for (i = 0; i < integerVal; i++){
+			var red = 0 + (weightedVal*i);
+			var green = 510 - (weightedVal*i);
+			if(green > 255){green = 255};
+			if(green < 0){green = 0};
+			if(red > 255){red = 255};
+
+			var value = ("rgba(" + red + ", " + green + ", 0, " + transparency + ")");
+			colourList[i] = value;
+		}
+		return colourList;
+	}
+
+
+
 </script>
 
 <style>
 table strong {;
 	padding-left: 8px;
 }
+
 table tr td:hover {
 	cursor:pointer;
 }
+
 table tr td .show-on-hover {
     display: none;
 }
+
 table tr td:hover .show-on-hover {
     display: inline;
 }
-#divPortChart{
+
+.chart{
 	display: inline-block;
 	width:45%;
-}
-#portTable{
-	width: 50%;
 }
 
 #divGeoStats{
-	vertical-align:top;
+	padding-top: 60px;
 	display: inline-block;
+	float: right;
 	width:45%;
 }
+
 .mac-cell {
     position: relative;
 }
+
 .mac-cell-length {
 	position: relative;
 }
+
 .renameOp{
 	position: absolute;
     left: calc(100% - 100px);
@@ -574,11 +699,42 @@ table tr td:hover .show-on-hover {
 	top: 5px;
 }
 
+#reportHeader{
+	font-size: 25px;
+	color: "#888888";
+	padding-top: 10px;
+	text-align: center;
+	text-decoration: underline;
+}
+
+#reportSubHeader{
+	font-size: 18px;
+	color: "#AAAAAA";
+	padding-top: 5px;
+	padding-bottom: 25px;
+	text-align: center;
+	font-style: italic;
+}
+
+#resultsPage{
+	display:none;
+}
+
+.reportHeader{
+	font-weight: bold;
+	font-size: 18px;
+	text-align: center;
+	padding-bottom: 5px;
+	color: "#DDDDDD";
+}
+
 @media (max-width: 767px) {
     .mac-cell {
         display: none;
     }
 }
+
+
 
 </style>
 
@@ -593,21 +749,29 @@ table tr td:hover .show-on-hover {
 	</div>
 </div>
 <div id="resultsPage">
+	
 	<br>
 	<br>
 
-	
+	<p id="reportHeader"></p>
+	<p id="reportSubHeader"></p>
 	<div class= "contained">
-		<div id="divPortChart">
+		<div class="chart">
+			<p class="reportHeader">Ports Used</p>
 			<canvas id="portChart"></canvas>
 		</div>
 		<div id="divGeoStats">
+			<p class="reportHeader">Geolocation</p>
 			<table id="geoTableDiv"></table>
 		</div>
 		<br>
-
-
-		<div id="tableBreakdown"></div>
+		<div style="display: block">
+			<div id="tableBreakdown" style= "display:inline-block; padding-top: 60px"></div>
+			<div class="chart" style="float:right;">
+				<p class="reportHeader">Connections to IP<br>from other monitored devices</p>
+				<canvas id="otherDevChart"></canvas>
+			</div>
+		</div>
 	</div>
 </div>
 

@@ -1,1 +1,1 @@
-{"dataOUTmax": 0, "max": 0, "dataIN": null, "dataINmax": 0, "IPLen": [], "IPs": [], "dataOUT": [3268], "portLen": [], "ports": []}
+{"privdataOUT": [11638], "dataOUTmax": 0, "max": 0, "privPortsLen": [10976, 7280, 6212, 170, 170, 112, 112, 112, 112, 112], "dataIN": null, "dataINmax": 0, "IPLen": [1400], "IPs": ["255.255.255.255"], "privIPsLen": [25368], "dataOUT": [1400], "privdataIN": [13730], "privPorts": [33644, 33645, 67, 23, 2000, 33655, 33656, 33657, 33658, 33659], "portLen": [1400], "privIPs": ["192.168.1.1"], "ports": [67]}

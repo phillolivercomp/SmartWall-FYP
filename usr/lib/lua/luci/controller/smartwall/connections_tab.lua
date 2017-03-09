@@ -35,6 +35,9 @@ function index()
 	page = entry({"admin", "smart_tab", "rename_host"}, call ("rename_host"), nil)
 	page.leaf = true
 
+	page = entry({"admin", "smart_tab", "get_other"}, call ("get_Other_Results"), nil)
+	page.leaf = true
+
 end
 
 -- Function that will return list of objects to web server being an SQL lookup
@@ -63,7 +66,7 @@ function get_results(mac)
 	local currResults = assert(db:execute(sql))
 	-- Get first row of results
 	local row = currResults:fetch({}, "a")
-	-- Loop 50 times or until we dont get a results populating list
+	-- Loop until we dont get a results populating list
 	while row do
 		index = index + 1
 		list[index] = row
@@ -180,4 +183,26 @@ function rename_host()
 	file:write(sql)
 	file:close()
 
+end
+
+function get_Other_Results()
+	local ip = luci.http.formvalue("ip")
+	local sql = string.format('SELECT monitorMAC, SUM(length) AS len FROM connectionHistory WHERE toIP = "%s" GROUP BY monitorMAC', ip)
+
+	local currResults = assert(db:execute(sql))
+
+	local index, sqlResults = 0, {}
+	local row = currResults:fetch({}, "a")
+	-- Loop until we dont get a result, populating list
+	while row do
+		index = index + 1
+		sqlResults[index] = row
+		row = currResults:fetch({}, "a")
+	end
+
+	if #sqlResults > 0 then 
+		luci.http.prepare_content("application/json")
+		luci.http.write_json(sqlResults)
+		return
+	end	
 end
