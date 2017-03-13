@@ -151,9 +151,9 @@ def dataUsage(mac, old, new):
 		newRatio = float(new["dataOUT"]) / new["dataIN"]
 		diffRatio = oldRatio/newRatio
 		if (diffRatio - 1.0) > changeRatio:
-			ruleBroke(mac, "Unexpected behaviour", "Too much data sent" , diffRatio)
-		elif(diffRatio  - 1.0) < changeRatio:
-			ruleBroke(mac, "Unexpected behaviour", "Too much data received" , diffRatio)
+			ruleBroke(mac, "In/Out Ratio", "Data sent" , diffRatio)
+		elif((1/diffRatio)  - 1.0) > changeRatio:
+			ruleBroke(mac, "In/Out Ratio", "Data received" , (1/diffRatio))
 
 def maxData(mac, old, new):
 	if "max" in old and new["max"] > 0:
@@ -167,9 +167,18 @@ def ruleBroke(mac, rule, value, data):
 
 checkTables()
 
+def cleaner(macs):
+	repcur.execute("SELECT DISTINCT(mac) FROM reports")
+	results = repcur.fetchall()
+	missingMacs = []
+	for item in results:
+		if item[0] not in macs:
+			repcur.execute("DELETE FROM reports WHERE mac = ?", (item[0],))
+
 while True:
 
 	macList = getMACs()
+	cleaner(macList)
 	for item in macList:
 		curReport = generate_Report(item)
 		file = open('/usr/lib/smartwall/reports/active/' + item).read()

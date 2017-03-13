@@ -13,6 +13,33 @@
 </div>
 
 <div>
-	<h3>Version <i>1.0</i></h3>
+	<h3>How to Use</h3>
+	<p>Smartwall is split up into a different parts with the overall goal of providing clarity for exactly what IoT (and other) devices are connecting to with the ability to stop them accessing what you do not want them to. This comes with the ability for the user to have massive control over their devices in a simple and efficient way.</p>
+	<div class = "submenu">
+		<h4>Control Center</h4>
+		<p>This is the first page a user will use to evaluate their devices security. The  configured devices appear here with a history of the amount of traffic they have been sending and receiving over time. Beneath this are two submenus being the connections page and the monitoring page.</p>
+	</div>
+	<div class = "submenu">
+		<h4>Connections tab</h4>
+		<p>The connections tab provides is simply an interface between the web UI and the underlying database. This database stores every connection the device you have selected has made since monitoring began. Hostnames will attempt to be resolved against found IP addresses but in the case where the name is either not found or not easily identifiable, this name can be changed by the user.</p>
+	</div>
+
+	<div class = "submenu">
+		<h4>Configuration</h4>
+		<p>Configuration page allows the user to make changes to the way Smartwall performs. This includes specifying the devices that you want to monitor. The MAC addresses in the entry table should automatically populate with devices on the network alongside their IP addresses if available. Adding or removing devices is simple with devices added being monitored immediately as of being saved.</p>
+	</div>
+
+	<p></p>
+</div>
+
+<div>
+	<h5>Version <i>1.0</i></h5>
 </div>
 <%+footer%>
+<style>
+
+.submenu{
+	padding-left: 5%;
+}
+
+</style>
