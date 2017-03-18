@@ -4,7 +4,7 @@
 
 <div>
 	<h3>Smartwall</h3>
-	<p>This piece of software aims to provide you with enough information to fully monitor a users entire, or selective parts, of their network. On top of this, the control center provides</p>
+	<p>This piece of software aims to provide you with enough information to fully monitor selected devices on a users network alongside securing them against external threats.</p>
 </div>
 
 <div>
@@ -18,10 +18,20 @@
 	<div class = "submenu">
 		<h4>Control Center</h4>
 		<p>This is the first page a user will use to evaluate their devices security. The  configured devices appear here with a history of the amount of traffic they have been sending and receiving over time. Beneath this are two submenus being the connections page and the monitoring page.</p>
+		<p>Connections page is the more strict way to access device control. Firstly there is a box showing some statistics about what the device is connecting to both on the local (LAN) and wider network (WAN). From here, we can click limit connections to generate iptable rules. These rules are viewable in browser and can be added to or removed with the controls on the page. If you want to stop limiting connections, this can be done by hitting unlimit connections at the bottom of the page.</p>
+		<p>Monitoring page is the soft security solution. A profile of behaviour is generated at this point based on what options you have selected. Once you click start monitoring, all connections from this point on will be checked against this profile report and based on the rules set will warn you of behaviour that is unexpected. Each rule does the following:</p>
+		<ul>
+			<li><b>IP Addresses</b> - Logs any new IP addresses the devices has connected to.</li>
+			<li><b>Ports</b> - Logs new services / ports the devices uses.</li>
+			<li><b>Data in/out ratio</b> - Checks the amount of data sent in and out of the device each hour and compartive to previous ratios will flag big changes in these numbers</li>
+			<li><b>Max data</b> - Takes max data within an hour previously and if the device exceeds this by a large amount it will be logged</li>
+		</ul>
 	</div>
 	<div class = "submenu">
 		<h4>Connections tab</h4>
 		<p>The connections tab provides is simply an interface between the web UI and the underlying database. This database stores every connection the device you have selected has made since monitoring began. Hostnames will attempt to be resolved against found IP addresses but in the case where the name is either not found or not easily identifiable, this name can be changed by the user.</p>
+
+		<p>By clicking an entry in this take, a breakdown page opens of the entirity of connections made between the device and this IP address. This includes the amount of data sent on each port and data draw from a geolocation service.</p>
 	</div>
 
 	<div class = "submenu">

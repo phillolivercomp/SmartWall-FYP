@@ -25,16 +25,19 @@ function index()
 	page = entry({"admin", "smart_tab", "connections_list"}, call("list_connections"), nil)
 	page.leaf = true
 
-	--Create address to check tcpdump is running
+	-- Creates address to check tcpdump is running
 	page = entry({"admin", "smart_tab", "check_tcpdump"}, call ("check_Execution"), nil)
 	page.leaf = true
 
+	-- Creates address to return breakdown of connections on device
 	page = entry({"admin", "smart_tab", "connection_breakdown"}, call ("result_Breakdown"), nil)
 	page.leaf = true
 
+	-- Creates address allowing user to change DNS entry for an IP
 	page = entry({"admin", "smart_tab", "rename_host"}, call ("rename_host"), nil)
 	page.leaf = true
 
+	-- Creates address to return traffic seen on other devices from an IP
 	page = entry({"admin", "smart_tab", "get_other"}, call ("get_Other_Results"), nil)
 	page.leaf = true
 
@@ -44,14 +47,16 @@ end
 function list_connections()
 	-- Gets value ip from webpage
 	local mac = luci.http.formvalue("MAC")
+	-- Function call to get_results
 	sqlResults = assert(get_results(mac))
 
 	-- Will write out results to luci web server if there are any
-	if #sqlResults > 0 then 
+	if #sqlResults > 0 then
 		luci.http.prepare_content("application/json")
 		luci.http.write_json(sqlResults)
 		return
 	end
+	-- Ends function cal
 	return sqlResults
 end
 
@@ -72,22 +77,22 @@ function get_results(mac)
 		list[index] = row
 		row = currResults:fetch({}, "a")
 	end
-	print(list)
 	-- return list
 	return list
 end
 
 -- helper to list_devices and will read config file to generate objects representing devices
 function list_devices_helper()
-
+	-- Creates variables needed for function including opening config file
 	local list, count, file = {}, 0, io.open(configFile, "r")
 	-- Loop starts
 	while true do
+		-- Reads line of file
 		local line = file:read("*line")
 		if line == nil then
 			-- break if end of file
 			break
-
+		-- if line contains config monitor, we have found mac address entry
 		elseif string.find(line, "config monitor") then
 			-- if find config monitor we found a device
 			count = count + 1
@@ -96,10 +101,13 @@ function list_devices_helper()
 			while true do
 				-- Another loop reads subsequent lines until it finds either an empty, end of file or the name or deviceIP
 				local line = file:read("*line")
+				-- If end of file, stop
 				if line == nul or line == "" then 
 					break
+				-- if we find name of device, save in deviceObject
 				elseif string.find(line, "option name") then
 					deviceObject.devName = string.sub(line, 15, string.len(line)-1)
+				-- if we find mac of object, save in deviceObject
 				elseif string.find(line, "option mac") then
 					deviceObject.devMAC = string.match(line, "%w+:%w+:%w+:%w+:%w+:%w+")	
 				end
@@ -112,6 +120,7 @@ function list_devices_helper()
 	return list
 end
 
+-- Returns list of devices to web UI
 function list_devices()
 	-- generates results with helper method
 	results = assert(list_devices_helper())
@@ -127,17 +136,23 @@ function list_devices()
 	return results
 end
 
+-- Function to check whether or not monitoring software is running
 function check_Execution()
+	-- check if tcpdump exists using subproccess
 	local procFunction = io.popen("pgrep tcpdump")
+	-- read result
 	local result = procFunction:read("*a")
+	-- close function
 	procFunction:close()
 
+	-- if it doesn't find number of process (pid) then return false
 	container = {}
 	if string.match(result, "[0-9]+") == nil then
 		container.value = "False"
 		container.contents = result
 		luci.http.prepare_content("application/json")
 		luci.http.write_json(container)
+	-- else return true
 	else
 		container.value = "True"
 		container.contents = result
@@ -146,27 +161,30 @@ function check_Execution()
 	end
 end
 
+-- Generates results of ips connections to a mac address
 function result_Breakdown()
-	--Getting data of IP and mac address from webpage
+	-- Getting data of IP and mac address from webpage
 	local index, sqlResults = 0, {}
-	local passedVals = luci.http.formvalue("ipPlusMac")
-	words = {}
-	for word in passedVals:gmatch("[%w%p]+") do table.insert(words, word) end
-	ip = words[1]
-	mac = words[2]
-
-	--Generate SQL statement and print results out
+	-- Get ip from web UI
+	local ip = luci.http.formvalue("ip")
+	-- Get mac address from web UI
+	local mac = luci.http.formvalue("mac")
+	-- Generate SQL statement from mac and IP
 	local sql = string.format('SELECT * FROM connectionHistory WHERE monitorMAC = "%s" AND toIP = "%s" ORDER BY port;', mac, ip)
+	-- Execute statement and fect results
 	local currResults = assert(db:execute(sql))
 
+	-- Get first result
 	local row = currResults:fetch({}, "a")
 	-- Loop until we dont get a result, populating list
 	while row do
+		-- Save to index and fetch next row
 		index = index + 1
 		sqlResults[index] = row
 		row = currResults:fetch({}, "a")
 	end
 
+	-- If we have more than 0 results, return to web UI
 	if #sqlResults > 0 then 
 		luci.http.prepare_content("application/json")
 		luci.http.write_json(sqlResults)
@@ -174,23 +192,34 @@ function result_Breakdown()
 	end	
 end
 
+-- Function to rename DNS entry of IP address
 function rename_host()
+	-- Get IP address from web UI
 	local ip = luci.http.formvalue("ip")
+	-- Get new name from web  UI
 	local name = luci.http.formvalue("newName")
 
+	-- Access sqlCommands file and open in append mode
 	local file = io.open("/tmp/sqlCommands", "a")
+	-- Generate new sql command and place new line at the end.
 	local sql = string.format('UPDATE dnsLookups SET hostname = "%s" WHERE toIP = "%s"\n;',name, ip)
+	-- Write command to file and close it
 	file:write(sql)
 	file:close()
 
 end
 
+-- Gets details of an IPs connections to all monitored devices
 function get_Other_Results()
+	-- Get IP from web UI
 	local ip = luci.http.formvalue("ip")
+	-- Generate web UI 
 	local sql = string.format('SELECT monitorMAC, SUM(length) AS len FROM connectionHistory WHERE toIP = "%s" GROUP BY monitorMAC', ip)
 
+	-- Execute sql statement and save results to variable
 	local currResults = assert(db:execute(sql))
 
+	-- Initiate variables to use later
 	local index, sqlResults = 0, {}
 	local row = currResults:fetch({}, "a")
 	-- Loop until we dont get a result, populating list
@@ -200,6 +229,7 @@ function get_Other_Results()
 		row = currResults:fetch({}, "a")
 	end
 
+	-- Return results if any exist
 	if #sqlResults > 0 then 
 		luci.http.prepare_content("application/json")
 		luci.http.write_json(sqlResults)

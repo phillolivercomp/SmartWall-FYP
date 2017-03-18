@@ -45,8 +45,6 @@ local ipt = luci.sys.iptparser.IptParser(mode)
 local rules = ipt:find({table = "filter", chain = "FORWARD"})
 
 for _, w in pairs(rules) do
-	print(w.index)
-	print(w.chain)
 	print(w.target)
 	list_devices()
 end

@@ -21,6 +21,8 @@ nMapTool = "/usr/lib/smartwall/nMapper.py"
 
 global nmapData
 nmapData = {}
+global allowedMacIPs
+allowedMacIPs = {}
 
 def nmapGen():
     global nmapData
@@ -79,7 +81,30 @@ def getMACs ():
         if "option mac" in line:
             value = line[13:(len(line)-2)]
             List.append(value)
+    clearHistory(List)
+    getMACIPs(List)
     return List
+
+def getMACIPs(macs):
+    global allowedMacIPs
+    for mac in macs:
+        command = "iptables -L " + mac + " -n | grep -E -o \"([0-9]{1,3}[\.]){3}[0-9]{1,3}\w\""
+        iptableproc = sub.Popen((command), stdout=sub.PIPE, shell=True)
+        results = iptableproc.communicate()[0]
+        lines = results.split("\n")
+        if lines[0] == '':
+            allowedMacIPs[mac] = []
+        else:
+            allowedMacIPs[mac] = lines
+        
+
+def clearHistory(macs):
+    cur.execute("SELECT DISTINCT monitorMAC FROM connectionHistory")
+    results = cur.fetchall()
+    for res in results:
+        if res[0] not in macs:
+            cur.execute("DELETE FROM connectionHistory WHERE monitorMAC = ?", (res[0],))
+            cur.execute("DELETE FROM dataRate WHERE monitorMac = ?", (res[0],))
 
 
 def pushDns():
@@ -93,7 +118,7 @@ def checkTables ():
     #Function to check if table exists to hold data
     cur.execute("CREATE TABLE IF NOT EXISTS connectionHistory (monitorMAC text, toIP text, connection text, port integer, length integer, PRIMARY KEY (monitorMAC, toIP, connection, port))")
     cur.execute("CREATE TABLE IF NOT EXISTS dnsLookups (toIP text PRIMARY KEY, hostname text)")
-    cur.execute("CREATE TABLE IF NOT EXISTS dataRate (monitorMAC, hour int, dataSize int, dataIN int, dataOut int, PRIMARY KEY(monitorMAC, hour))")
+    cur.execute("CREATE TABLE IF NOT EXISTS dataRate (monitorMAC text, hour int, dataSize int, dataIN int, dataOut int, PRIMARY KEY(monitorMAC, hour))")
 
 def dataRateInit():
     for mac in macList:
@@ -101,7 +126,6 @@ def dataRateInit():
             cur.execute("INSERT OR IGNORE INTO dataRate VALUES (?,?,0,0,0)", (mac, num))
 
 def enterDNS (ipAddr):
-
     #if ip address does not already exist in table do following
     nslookupProc = sub.Popen(('nslookup', ipAddr), stdout=sub.PIPE)
     results = nslookupProc.communicate()[0]
@@ -128,13 +152,16 @@ class mapThread (threading.Thread):
         portNMap()
 
 def tablePush (items):
-    #Tries to update values in table
-    cur.execute("UPDATE connectionHistory SET length = length + ? WHERE monitorMAC = ? AND toIP = ? AND port = ? AND connection = ?", (items[3], items[0], items[1], items[2], items[4]))
-    cur.execute("INSERT OR IGNORE INTO connectionHistory (length, monitorMAC, toIP, port, connection) VALUES (?,?,?,?,?)", (items[3], items[0], items[1], items[2], items[4]))
+    global allowedMacIPs
+    if items[0] in allowedMacIPs:
+        if items[1] in allowedMacIPs[items[0]] or allowedMacIPs[items[0]] == []:
+            #Tries to update values in table
+            cur.execute("UPDATE connectionHistory SET length = length + ? WHERE monitorMAC = ? AND toIP = ? AND port = ? AND connection = ?", (items[3], items[0], items[1], items[2], items[4]))
+            cur.execute("INSERT OR IGNORE INTO connectionHistory (length, monitorMAC, toIP, port, connection) VALUES (?,?,?,?,?)", (items[3], items[0], items[1], items[2], items[4]))
 
-    if cur.rowcount > 0:
-        t = dnsThread(items[1])
-        t.start()
+            if cur.rowcount > 0:
+                t = dnsThread(items[1])
+                t.start()
 
 def pushHourTotals(hour):
     for item in macList:
@@ -150,12 +177,11 @@ def pushHourTotals(hour):
         else:
         	cur.execute("UPDATE dataRate SET dataSize = 0, dataIN = 0, dataOut = 0 WHERE monitorMAC = ? and hour = ?", (item, hour))
 
-#first generate macs from config file using method
-
-macList = getMACs()
-
 #generate our IPs to monitor and call checkTables to ensure our SQL table exists
 checkTables()
+
+#first generate macs from config file using method
+macList = getMACs()
 
 #begin running the tcpdump subprocess piping output to stdout
 
@@ -168,10 +194,9 @@ dataRateInit()
 nmapGen()
 
 #begin running the tcpdump subprocess piping output to stdout
-proc = sub.Popen(('tcpdump', '-l', '-n', '-t', '-q', '-i', 'br-lan', '-e', '-B', '65536', '-s', '128', 'tcp', 'or', 'udp'), stdout=sub.PIPE)
+proc = sub.Popen(('tcpdump', '-l', '-nn', '-t', '-q', '-i', 'br-lan', '-e', '-B', '65536', '-s', '128', 'tcp', 'or', 'udp'), stdout=sub.PIPE)
 
 with proc.stdout:
-	
 	#Level 1 loop
 	#takes each time of stdout and reads it
 
@@ -206,22 +231,26 @@ with proc.stdout:
 
         
         for mac in macList:
-        	#checks if the ip is in the command line and ensures the tcpdump line is not an ARP transaction
+        	#checks if the mac is in the command line
         	if mac in line and mac in nmapData:
         		#uses regular expressions to capture IPs and IPs with port numbers from line
         		if mac in items[0]:
-        			
-                    		portOut = (items[6].split("."))[-1].strip(":")
-                    		portIn = (items[8].split("."))[-1].strip(":")
+        			if items[6].count(".") == 3 or items[8].count(".") == 3:
+					tablePush([items[0], items[8][:-1], 0, items[5][:-1], 'Outbound'])
+				else: 
+                    			portOut = (items[6].split("."))[-1].strip(":")
+                    			portIn = (items[8].split("."))[-1].strip(":")
 
-				if (portOut + "/" + items[9][0:3].lower()) in nmapData[mac]:
-					port = portOut
-                     		else:
-					port = portIn
-
-        			tablePush([items[0], items[8][:items[8].rfind(".")], port, items[5][:-1], 'Outbound'])
+					if (portOut + "/" + items[9][0:3].lower()) in nmapData[mac]:
+						port = portOut
+                     			else:
+						port = portIn
+						if items[8][:items[8].rfind(".")].count(".") != 3 and "IPv6" not in line:
+							f = open("/text", "a")
+							f.write(line)
+							f.close()
+        				tablePush([items[0], items[8][:items[8].rfind(".")], port, items[5][:-1], 'Outbound'])
         		else:
-
         			portOut = (items[6].split("."))[-1].strip(":")
                     		portIn = (items[8].split("."))[-1].strip(":")
 
@@ -230,6 +259,10 @@ with proc.stdout:
 				else:
 					port = portOut
 
+					if items[6][:items[6].rfind(".")].count(".") != 3 and "IPv6" not in line:
+						f = open("/text", "a")
+						f.write(line)
+						f.close()
         			tablePush([items[2][:-1], items[6][:items[6].rfind(".")], port, items[5][:-1], 'Inbound'])
         	elif mac not in nmapData:
             	    t = mapThread()

@@ -2,7 +2,7 @@
 <script src="/luci-static/resources/jquery-3.1.1.min.js"></script>
 <script src="/luci-static/resources/Chart.js"></script>
 <span id= "Status" style="float: right;">Status: Unknown</span>
-<h1><%:Connections Log%></h1>
+<h1 id="pageHeader"><%:Connections Log%></h1>
 <input id="refresh" type = "button" value= "Refresh" onclick="refresh();" style = "float: left;" />
 <input id="goBack" type="button" value="Back" onclick="back();" style="float: right;" />
 
@@ -17,8 +17,12 @@
 	- max holds greatest length value of the result set (just to remove clutter)
 	- pages tracks how many pages exist of results
 	- globalMac defines the MAC address that is currently being viewed
+	- globalDev defines name of the device currently being viewed
+	- globalIP defines IP address currently being inspected
+	- globalHostname defines hostname currently being inspected
 	- currPage tracks current page
-	- portChart initialises chart in breakdown so it can be destroyed in another process easier.
+	- portChart initialises chart in breakdown
+	- otherDevChart initialises chart in breakdown 
 	*/
 	var interpreter = new XHR();
 	var globalPage = 0;
@@ -28,12 +32,15 @@
 	var pages;
 	var globalMac = "";
 	var globalDev = "";
+	var globalIP = "";
+	var globalHostname = "";
 	var toIPbreakdown = "";
 	var currPage;
 	var portChart;
 	var otherDevChart;
 	var portDictionary = {"20":"FTP","21":"FTP","22":"SSH", "23":"Telnet", "25": "SMTP", "53": "DNS", "67":"DHCP", "68":"DHCP", "80":"HTTP", "110":"POP", "123":"NTP", "137":"NetBIOS", "138":"NetBIOS", "139":"NetBIOS", "143":"IMAP", "161":"SNMP", "162":"SNMP", "179":"BGP", "389":"LDAP", "443":"HTTPS", "636":"LDAPS", "989":"FTP w/TLS", "990":"FTP w/TLS"};
 
+	//Translates port number to service name for common services
 	function get_Port_Usage(port){
 		var portStr = port.toString();
 		var usage = portDictionary[portStr];
@@ -54,11 +61,13 @@
 				var returnValue = result;
 
 				if(returnValue.value == "True"){
+					//Set text and colour to show running
 					document.getElementById("Status").innerHTML = "Status = Running"
 					document.getElementById("Status").style.backgroundColor = "hsl(120,100%,80%)";
 					document.getElementById("Status").style.borderRadius = "20px"
 				}
 				else if(returnValue.value = "False"){
+					//Set text and colour to show not running
 					document.getElementById("Status").innerHTML = "Status = Stopped"
 					document.getElementById("Status").style.backgroundColor = "hsl(0,100%,80%)";
 					document.getElementById("Status").style.borderRadius = "20px"
@@ -82,6 +91,7 @@
    		return res;
 	};
 
+	//Reverse of byteToSize. Not 100% accurate due to rounding previously
 	function sizeToBytes(sizeTxt){
 		var size = sizeTxt + '';
 		var sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
@@ -92,12 +102,11 @@
 
 		return res;
 	}
-
-	function sleep(ms) {
-	  return new Promise(resolve => setTimeout(resolve, ms));
-	}
+	// Updates time of last refresh in the UI
 	function updateTime(){
+		//Get date
 		var d = new Date();
+		//Set date
 		document.getElementById("time").innerHTML = "Page updated at: " + d.toLocaleDateString() + " - " + d.toLocaleTimeString();
 	}
 
@@ -132,19 +141,23 @@
 			get_Results(globalMac, globalDev);
 		}
 		else if(currPage == "breakdown"){
-
+			open_Breakdown(globalIP, globalMac, globalHostname)
 		}
 	};
 
 	//Checks what page user is on and takes them back to last one
 	function back(){
 
+		//If no current page, something has gone wrong
 		if (currPage == ""){
 			alert("Undefined behaviour");
 		}
+		//If macResults, go back to connections log
 		else if(currPage == "macResults"){
+			document.getElementById("pageHeader").innerHTML ="Connections Log"
 			get_MACs();
 		}
+		//If breakdown, reopen results with fresh data and destroy breakdown page
 		else if(currPage == "breakdown"){
 			open_Results(globalPage, results);
 			clear_Breakdown(toIPbreakdown, globalMac);
@@ -161,6 +174,8 @@
 		globalPage = 0;
 		globalMac = "";
 		globalDev = "";
+		globalIP = "";
+		globalHostname = "";
 		currPage = "";
 		document.getElementById("tableResults").style.opacity = 0.5;
 		document.getElementById("tableResults").style.pointerEvents = 'none';
@@ -221,11 +236,17 @@
 
 	// Function which takes MAC and with this generates results from SQL table representing connections
 	function get_Results(MAC, devName) {
+		//Update time of system
 		updateTime();
+		//Set styling
+		document.getElementById("pageHeader").innerHTML = "Connections Log - " + devName;
 		document.getElementById("tableResults").style.opacity = 0.5;
 		document.getElementById("tableResults").style.pointerEvents = 'none';
+		//Set global variables to new values determined by call
 		globalMac = MAC;
 		globalDev = devName;
+		globalIP = "";
+		globalHostname = "";
 		currPage = "macResults";
 
 
@@ -233,7 +254,6 @@
 		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "connections_list")%>', {MAC:MAC},
 			function(_, sql){
 				results = sql;
-				console.log(results);
 
 				// Calls open results (which will always be first page)
 				if (results != null){
@@ -320,20 +340,26 @@
 		set_Colour_Value(max);
 	};
 
+	//Renames the DNS entry of the IP address in the SQL database
 	function rename_IP(ip, currentName){
 
+		//Prompt user for new name with default value as current name
 		var newName = prompt('Insert new hostname:', currentName);
+		//If name entered, call LUA function
 		if(newName != null){
+			//Pass ip and new name
 			interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "rename_host")%>', {
 				ip:ip,
 				newName:newName
 			},
 			function(_, sql){
+				//Alert user and refresh page
 				alert("Result updated, this may take some time to appear.")
 				refresh();
 
 			});
 		}
+		//Prevent and further actions being called from UI overlaps of buttons
 		event.stopPropagation();
 	}
 
@@ -357,6 +383,7 @@
 	function geoDisplay(data){
 		//If status is not 200, something has gone wrong, display error
 		if(data.geoplugin_status != 200){
+			//Creates table with relevant columns and fills with blank data
 			var geoTable = "<table id=\"geoTable\" class=\"cbi-section-table\"><tbody>";
 			geoTable += '<tr><td class = "mac-cell"><b>Country</b></td>'
 					+ '<td class = "mac-cell">-</td></tr>'
@@ -369,12 +396,14 @@
 					+ '<tr><td class = "mac-cell"><b>Longitude</b></td>'
 					+ '<td class = "mac-cell">-</td></tr>';
 
+			//Set style
 			document.getElementById("geoTableDiv").innerHTML=geoTable;
 			document.getElementById("geoTableDiv").style.pointerEvents='auto';
 			document.getElementById("geoTableDiv").style.opacity=1;
 		}
 		//Else parse and display data into table
 		else{
+			//Creates table with appropriate columns and values
 			var geoTable = "<table id=\"geoTable\" class=\"cbi-section-table\"><tbody>";
 			geoTable += '<tr><td class = "mac-cell"><b>Country</b></td>'
 					+ '<td class = "mac-cell">' + data.geoplugin_countryName + '</td></tr>'
@@ -386,7 +415,7 @@
 					+ '<td class = "mac-cell">' + data.geoplugin_latitude + '</td></tr>'
 					+ '<tr><td class = "mac-cell"><b>Longitude</b></td>'
 					+ '<td class = "mac-cell">' + data.geoplugin_longitude + '</td></tr>';
-
+			//Set style
 			document.getElementById("geoTableDiv").innerHTML=geoTable;
 			document.getElementById("geoTableDiv").style.pointerEvents='auto';
 			document.getElementById("geoTableDiv").style.opacity=1;
@@ -394,23 +423,21 @@
 	}
 
 	//Takes IP and mac address and opens up Page to display relevant information about their relationship
-	function open_Breakdown(toIPAddress, MAC, hostName){
-		console.log(hostName);
+	function open_Breakdown(ip, mac, hostName){
 		//Hide the tablePage and show resultsPage
 		document.getElementById("tablePage").style.display = "none";
 		document.getElementById("resultsPage").style.display = "block";
-		document.getElementById("reportHeader").innerHTML = globalDev + " connections to " + toIPAddress;
+		document.getElementById("reportHeader").innerHTML = globalDev + " connections to " + ip;
 		document.getElementById("reportSubHeader").innerHTML = hostName;
 		updateTime();
 		//Log what page we are on
 		currPage = "breakdown";
-		toIPbreakdown = toIPAddress;
-
-		//Generate item to send to server and initialise variable to get results back
-		var ipPlusMac = toIPAddress + " " + MAC;
+		globalIP = ip;
+		globalHostname = hostName;
+		toIPbreakdown = ip;
 		var breakDownResults;
 		//Send request with the ipPlusMac variable
-		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "connection_breakdown")%>', {ipPlusMac:ipPlusMac},
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "connection_breakdown")%>', {ip:ip, mac:mac},
 			function(_, sql){
 				//Hold results sent back
 				breakDownResults = sql;
@@ -420,7 +447,7 @@
 					
 					//Utilise JSONP service offered by geoplugin passing it IP and callback to geoDisplay
 					var geoScript = document.createElement('script');
-					geoScript.src = 'http://www.geoplugin.net/json.gp?ip=' + toIPAddress
+					geoScript.src = 'http://www.geoplugin.net/json.gp?ip=' + ip
 					+ '&jsoncallback=geoDisplay';
 
 					//Append this script to page so it is called
@@ -472,16 +499,19 @@
 					    }
 					});
 					genPortTable(breakDownResults);
-					genOtherDevicesTable(toIPbreakdown);
+					genOtherDevicesChart(toIPbreakdown);
 				}
 			}
 		)		
 	};
 
+	//Creates the table for the ports breakdown
 	function genPortTable(results){
+		//Initiate table
 		var portTableContents = "<table id=\"portTable\" class=\"cbi-section-table\"><tbody>";
 		portTableContents+= "<tr><th>Port</th><th>Direction</th><th>Data sent</th></tr>";
 		for(var i = 0; i < results.length; i++){
+			//Loop over results and generate row for each result
 			result = results[i];
 			var usage = get_Port_Usage(result.port);
 			portTableContents += '<tr draggable = "true">'
@@ -496,48 +526,61 @@
 						+ '</td>'
 						+ '</tr>';
 		};
+		//Close table
 		portTableContents += '</table>';
+		//Set table breakdown element as table created
 		document.getElementById("tableBreakdown").innerHTML = portTableContents;
 	};
 
-	function genOtherDevicesTable(ip){
+	//Starts process of creating chart for others devices traffic to that IP
+	function genOtherDevicesChart(ip){
+		//Calls LUA function
 		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "connections_select")%>', null,
 				function(_, MACs){
 						var devices = MACs;
-						console.log(devices);
+						//Call to helper function
 						genOtherHelper(devices, ip);
 				})
 	}
 
+	//Helper function for creating table
 	function genOtherHelper(macs, ip){
+		//Calls LUA function
 		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "get_other")%>', {ip:ip},
 				function(_, res){
-						var history = res;
-						console.log(history);
-						var macList = {};
-						for(var i = 0; i < macs.length; i++){
-							var deviceName = macs[i].devName;
-							var macToFind = macs[i].devMAC;
-							var length = 0;
-							for(var j = 0; j < history.length; j++){
-								if(macToFind == history[j].monitorMAC){
-									length = history[j].len;
-								}
+					//Initiate variables
+					var history = res;
+					var macList = {};
+					//Loop over results and set relevant information
+					for(var i = 0; i < macs.length; i++){
+						var deviceName = macs[i].devName;
+						var macToFind = macs[i].devMAC;
+						var length = 0;
+						//Sum lengths of data flow into one value for each mac
+						for(var j = 0; j < history.length; j++){
+							if(macToFind == history[j].monitorMAC){
+								length = history[j].len;
 							}
-							macList[deviceName] = length;
 						}
-						makeOtherDevChart(macList);
+						macList[deviceName] = length;
+					}
+					//Call chart creation function
+					makeOtherDevChart(macList);
 				})
 	}
 
+	//Function that takes data and creates chart from it
 	function makeOtherDevChart(obj){
-
+		//Get chart element and save to variable
 		var ctx = document.getElementById("otherDevChart");
 
+		//Split values from the data
 		var macKeys = Object.keys(obj);
 		var lenVals = Object.values(obj);
+		//Create colour values from data length
 		var backColours = colourListAlpha(macKeys.length, "0.2");
 		var borderColours = colourListAlpha(macKeys.length, "1.0");
+		//Initiate data object for chart with values in correct format
 		var data = {
 			labels: macKeys,
 			datasets: [
@@ -550,11 +593,13 @@
 				}
 			]
 		};
+		//Initiate the chart
 		otherDevChart = new Chart(ctx, {
 	    		type: 'bar',
 	    		data: data,
 	    		options: {
 	    			legend: {
+	    				//Hides the label above chart
     					display: false,
 					},
 	    			tooltips: {
@@ -574,6 +619,7 @@
 	            		yAxes: [{
 	                		stacked: true,
 	                		ticks: {
+	                			//Changes the scales to read as file size and not a large number
 						        callback: function (valuePayload) {
 									return bytesToSize(valuePayload);
 									}					
@@ -631,13 +677,17 @@
 		return colourList;
 	};
 
+	//Method to generate colour values with result length with alpha channel included.
 	function colourListAlpha(integerVal, transparency){
+		//If only one value, return red with transparency
 		if(integerVal == 1){
 			return ["rgba(255, 0, 0, " + transparency + ")"]
 		}
+		//Create variables and get weighted value to interate with
 		var colourList = [];
 		var weightedVal = Math.ceil(510/(integerVal-1));
 		
+		//Loop and add values to list changing colour in increments of the weighted value
 		for (i = 0; i < integerVal; i++){
 			var red = 0 + (weightedVal*i);
 			var green = 510 - (weightedVal*i);
@@ -645,13 +695,13 @@
 			if(green < 0){green = 0};
 			if(red > 255){red = 255};
 
+			//Format colour value string in correct format
 			var value = ("rgba(" + red + ", " + green + ", 0, " + transparency + ")");
 			colourList[i] = value;
 		}
+		//Return the list
 		return colourList;
 	}
-
-
 
 </script>
 

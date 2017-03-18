@@ -6,12 +6,19 @@
 
 <script type ="text/javascript">
 
+	//Initiate all our needed variables
+	// interpreter - handles request to LUA functionality
+	// activeMACs - holds list of mac addresses with active monitoring.
+	// resultObj - holds results of report generation
+	// blockedChart - initiates chart value for breakdowns
+	// portDictionary - holds bindings for port number to service for common ports
 	var interpreter = new XHR();
 	var activeMACs = [];
 	var resultObj = {};
 	var blockedChart;
 	var portDictionary = {"20":"FTP","21":"FTP","22":"SSH", "23":"Telnet", "25": "SMTP", "53": "DNS", "67":"DHCP", "68":"DHCP", "80":"HTTP", "110":"POP", "123":"NTP", "137":"NetBIOS", "138":"NetBIOS", "139":"NetBIOS", "143":"IMAP", "161":"SNMP", "162":"SNMP", "179":"BGP", "389":"LDAP", "443":"HTTPS", "636":"LDAPS", "989":"FTP w/TLS", "990":"FTP w/TLS"};
 
+	// Translates port number to service name
 	function get_Port_Usage(port){
 		var portStr = port.toString();
 		var usage = portDictionary[portStr];
@@ -23,25 +30,31 @@
 		return "";
 	}
 
+	//SECTION - ON OPEN UI
+	//Function to get the mac addresses that are being monitored
 	function get_active(){
 		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "get_active")%>', null,
 			function(_, MACs){
+				console.log(MACs)
 				var actives = MACs;
 				set_active(actives);
 			})
 	}
 
+	//Function to set the colour and relevant fields for the control center device objects
 	function set_active(actives){
 		activeMACs = actives;
 		var allDevReps = document.getElementsByClassName("reportStat");
+		//Set all to not monitored and red
 		for(var j = 0; j < allDevReps.length; j++){
 			allDevReps[j].style.backgroundColor = "#FF5555";
 			allDevReps[j].innerHTML = "Not Monitored";
 		}
 
 		var allBoxs = document.getElementsByClassName("boxDiv");
-
+		//If there exists any active reports then continue
 		if(actives){
+			//Loop over reports and set colour scheme appropriately
 			for(var i = 0; i < actives.length; i++){
 				var idRep = "repStat" + actives[i];
 				var idRMButton = "rm" + actives[i];
@@ -59,6 +72,8 @@
 		
 	}
 
+	//SECTION - UTILITY
+	//Change the length of bytes to a easy to read string
 	function bytesToSize(byteSize) {
    		var sizeResults = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
    		if (byteSize == 0){
@@ -69,6 +84,8 @@
    		return res;
 	};
 
+	//SECTION - LANDING PAGE
+	//Gets the mac addresses that the system currently has entered in the configuration page
 	function get_MACs(){
 		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "connections_select")%>', null,
 			function(_, MACs){
@@ -102,6 +119,7 @@
 			})
 	}
 
+	//Changes the form of integers to 24 hour form
 	function get24(){
 
 		var numArr = []
@@ -117,7 +135,7 @@
 		return returnArr;
 	}
 
-
+	//Gets the past 24 hours worth of connections of devices
 	function get_MAC_History(mac){
 		var results;
 		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "generate_results")%>', {mac:mac},
@@ -129,7 +147,7 @@
 				var labels = get24();
 
 				var dataset = get_Data(timeAdjRes);
-				
+				//Creates data variable for chart
 				var data = {
 				    labels: labels,
 				    datasets: [
@@ -158,6 +176,7 @@
 				    ], 
 				};
 
+				//Initiates the chart for display
 				var myLineChart = new Chart(ctx, {
 				    type: 'line',
 				    data: data,
@@ -193,6 +212,7 @@
 			})
 	}
 
+	//Formats results into correct standard for graph
 	function format24(results){
 
 		if(results == null){
@@ -201,9 +221,11 @@
 
 		var d = new Date();
 		var n = d.getHours();
+		//This loop overcomes the bug with 32 bit numbers seen
 		for(var i = 0; i < results.length; i++){
 			results[i].dataSize = results[i].dataSize + 4294967296 * results[i].bitNum;
 		}
+		//Splice so current time is at the end with time+1 hours is at the front
 		var newResults = results.slice(n+1).concat((results.slice(0, n+1)));
 		return newResults;
 	}
@@ -226,7 +248,7 @@
 	}
 
 	function get_report(mac, name){
-		document.getElementById("connHeader").innerHTML += " - " + name;
+		document.getElementById("connHeader").innerHTML = "Connections Page - " + name;
 		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "report_call")%>', {mac:mac},
 			function(_, res){
 				resultObj = res;
@@ -238,18 +260,17 @@
 					var unnamedservList = get_unnamed_services(resultObj);
 					var header = '<h3>'+ name + '</h3>';
 					var reportTable = '<table id="reportTable" class="cbi-section-table"><tbody>'
-								+'<tr><th style="width:25%;">Public IPs</th><td style="width:25%;">'+ resultObj.IPs.length +'</td>'
+								+'<tr><th style="width:25%;">Public IPs</th><td class="lefter" style="width:25%;">'+ resultObj.IPs.length +'</td>'
 								+'<td style="width:25%;text-align:right;">'+ resultObj.privIPs.length +'<th style="width:25%;text-align:right;">Private IPs</th></tr>'
-								+'<tr><th>Public Ports used</th><td>'+ resultObj.ports.length +'</td>'
+								+'<tr><th>Public Ports used</th><td class="lefter">'+ resultObj.ports.length +'</td>'
 								+'<td style="text-align:right;">'+ resultObj.privPorts.length +'</td><th style="text-align:right;">Private Ports used</th></tr>' 
-								+'<tr><th>Data sent externally</th><td>' + bytesToSize(resultObj.dataOUT) + '</td>'
+								+'<tr><th>Data sent externally</th><td class="lefter">' + bytesToSize(resultObj.dataOUT) + '</td>'
 								+'<td style="text-align:right;">'+ bytesToSize(resultObj.privdataOUT) +'</td><th style="text-align:right;">Data Sent Locally</th></tr>'
-								+'<tr><th>Data received externally</th><td>' + bytesToSize(resultObj.dataIN) + '</td>'
+								+'<tr><th>Data received externally</th><td class="lefter">' + bytesToSize(resultObj.dataIN) + '</td>'
 								+'<td style="text-align:right;">'+ bytesToSize(resultObj.privdataIN) +'</td><th style="text-align:right;">Data Received Locally</th></tr>'
-								+'</tbody></table>'
-								+ '<p>Limit connections will input new rules into your ipTables to prevent your device from anything other than what it has seen before. This will ignore devices on the local network and allow them to still communicate freely though.</p>'
+								+'</tbody></table>';
 
-					var buttons = connpage_suffix(mac)
+					var buttons = connpage_suffix(mac, name)
 					document.getElementById("connections_content").innerHTML = header + reportTable;
 
 				}
@@ -259,23 +280,35 @@
 			});
 	};
 
-	function connpage_suffix(mac){
+	function connpage_suffix(mac, name){
 		var suffix = document.getElementById("connections_suffix");
 		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "get_rules")%>', 
 			{mac:mac},
 			function(_, res){
-				console.log(res)
-				if(res != null && res.length > 1){
+				if(res != null && res.length >= 1){
 					document.getElementById("blockedHeader").style.display = "block";
-
+					var customRuleButton;
+					if(res[res.length - 1].target != "DROP"){
+						customRuleButton = '<input class="behaviourButton" id = "customIPEntry" style="float:right" placeholder="--ip address--"/><input class ="behaviourButton" style="float:right;" type="button" onclick="add_rule_drop(\'' + mac + '\', \''+ name +'\')" value="Block IP">'
+					}
+					else{
+						customRuleButton = '<input class="behaviourButton" id = "customIPEntry" style="float:right" placeholder="--ip address--"/><input class ="behaviourButton" style="float:right;" type="button" onclick="add_rule_allow(\'' + mac + '\', \''+ name +'\')" value="Allow IP">'
+					}
 					var button = '<input class = "behaviourButton" type = "button" onclick="unblock_connections(\'' + mac + '\')" value = "Unlimit connections" style = "float:right;"/>';
-					var table = '<br><h5>IPtable Rules</h5>' + '<input class = "behaviourButton" type = "button" onclick="toggle_iptable()" value="Toggle table"/>' + '<table id="iptTable" class="cbi-section-table" style="display:none;"><tbody>' + '<tr><th>Index</th><th>IP Blocked</th><th>Accept/Drop</th><th>Packets</th></tr>';
+					
+					var table = '<br><h5>IPtable Rules</h5>' + '<input class = "behaviourButton" type = "button" onclick="toggle_iptable()" value="Toggle table"/>' + customRuleButton + '<table id="iptTable" class="cbi-section-table" style="display:block-table;"><tbody>' + '<tr><th style="width:15%">Index</th><th style="width:50%">IP Address</th><th style="width:20%">Accept/Drop</th><th style="width:15%">Packets</th></tr>';
 					for(var i = 0; i < res.length; i++){
+						var removeButton = '<a class = "remip btn show-on-hover" onclick="delete_rule(\'' + mac + '\',' + res[i].index + ', \'' + name + '\')">Delete Rule</a>'
+
+						var onRowClick = 'onclick="get_breakdown(\'' + res[i].destination + '\', \'' + mac + '\', \'' + name + '\')"'; 
 						var acc = "ACCEPT";
 						if(res[i].target == "DROP"){
 							acc = "DROP";
 						}
-						table += '<tr class = "conn-cell"><td>' + i + '</td><td>' + res[i].destination + '</td><td>' + acc + '</td><td>' + res[i].packets + '</td></tr>'
+						if(i == res.length -1){
+							onRowClick = '';
+						}
+						table += '<tr class = "conn-cell"' + onRowClick + '><td>' + res[i].index + '</td><td>' + res[i].destination + removeButton + '</td><td>' + acc + '</td><td>' + res[i].packets + '</td></tr>'
 					}
 					table += '</tbody></table>'
 					suffix.innerHTML = button + table;
@@ -283,12 +316,10 @@
 					block_table(res);
 					open_conns();
 				}
-				else if(!res.complete){
-					suffix.innerHTML = '<input class = "behaviourButton" type = "button" onclick="block_connections(\'' + mac + '\')" value = "Limit connections" style = "float:right;"/>';
-					open_conns();
-				}
 				else{
-					suffix.innerHTML = '<input class = "behaviourButton" type = "button" onclick="block_connections(\'' + mac + '\')" value = "Limit connections" style = "float:right;"/>';
+					var helperTextLimit = '<p>Limit connections will input new rules into your ipTables to prevent your device from anything other than what it has seen before. This will ignore devices on the local network and allow them to still communicate freely though.</p><p>In order to limit the connections your device can make, select either drop or accept for your default rule. Selecting drop will make all connections your device has seen previously be accepts and nothing more. Accept will accept everything but allow you to specify IPs to block.</p>';
+					var dropAccSelect= "<div style='text-align:right;' title='Select default behaviour for packets in iptables'><b>Default:</b><form id='dropAccSelect'><input type = 'radio' name='defRule' value='Drop'>Drop<br><input type = 'radio' name='defRule' value='Accept'>Accept<br></form></div>"
+					suffix.innerHTML = helperTextLimit + '<div style="text-align:right;"><input class = "behaviourButton" type = "button" onclick="block_connections(\'' + mac + '\', \'' + name + '\')" value = "Limit connections"></div>' + dropAccSelect;
 					open_conns();
 				}
 			});
@@ -297,11 +328,9 @@
 	function toggle_iptable(){
 		var table = document.getElementById("iptTable")
 		if(table.style.display != "none"){
-			console.log("none")
 			table.style.display = "none"
 		}
 		else{
-			console.log("test")
 			table.style.display = "inline-table"
 		}
 	};
@@ -356,24 +385,40 @@
 		        }
 		    }		
 		});
-
-
-		console.log(accepted + " " + dropped);
 	}
 
-	function block_connections(mac){
-		console.log(resultObj)
-		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "init_chain")%>', 
+	function block_connections(mac, name){
+		var ruleDefault = get_default();
+		if(ruleDefault == ""){
+			alert("Need to select default rule")
+		}
+		else if(ruleDefault == "Drop"){
+			interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "init_chain")%>', 
 			{mac:mac},
 			function(_, res){
 				if(res != null && res.complete){
 					alert("Blocked connections successfully")
-					close_conns()
+					get_report(mac, name);
 				}
 				else{
-					console.log("error")
+					alert("Error. Could not complete.")
 				}
 			});
+		}
+		else if(ruleDefault == "Accept"){
+			interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "init_chain_acc")%>', 
+			{mac:mac},
+			function(_, res){
+				if(res != null && res.complete){
+					alert("Blocked connections successfully")
+					get_report(mac, name);
+				}
+				else{
+					alert("Error. Could not complete.")
+				}
+			});
+		}
+		
 	};
 
 	function unblock_connections(mac){
@@ -389,6 +434,16 @@
 					close_conns()
 				}
 			});
+	};
+
+	function get_default(){
+		var radios = document.getElementsByName("defRule")
+		for(var i = 0; i< radios.length; i++){
+			if(radios[i].checked){
+				return radios[i].value;
+			}
+		}
+		return "";
 	};
 
 	function get_services(report){
@@ -457,19 +512,22 @@
 	}
 
 	function close_conns(){
-		blockedChart.destroy();
+		if(blockedChart){
+			blockedChart.destroy();
+		}
 		document.getElementById("blockedHeader").style.display = "none";
 		document.getElementById("connectionsPage").style.display = "none";
 		document.getElementById("devicesDiv").style.display = "block";
 	}
 
 	function open_monitoring(mac, name){
-		document.getElementById("monHeader").innerHTML += " - " + name; 
+		document.getElementById("monHeader").innerHTML = "Monitoring Page - " + name; 
 		if (activeMACs != null && activeMACs.includes(mac)){
 			var content = '';
 			var button = '<input class = "behaviourButton" type = "button" onclick= "rem_device(\'' + mac + '\')" value = "Stop Monitoring"/>';
 			interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "return_report_table")%>', {mac:mac},
 			function(_, res){
+				console.log(res)
 				var resultObj = res;
 				var table = '';
 				if(resultObj != null && resultObj.length > 0){
@@ -479,8 +537,8 @@
 						if(resultObj[i].ruleBroke == "New IP Address" || resultObj[i].ruleBroke == "New Port number used"){
 							table += '<tr class="ip-cell"><td>' + resultObj[i].ruleBroke + '</td><td>' + resultObj[i].value + '</td><td>' + bytesToSize(resultObj[i].length) + '</td><td>' + resultObj[i].datePlusTime + '</td></tr>';
 						}
-						else if(resultObj[i].ruleBroke == "Unexpected behaviour" || resultObj[i].ruleBroke == "Large traffic flow"){
-							table += '<tr class="ip-cell"><td>' + resultObj[i].ruleBroke + '</td><td>' + resultObj[i].value + '</td><td>' + Math.round(resultObj[i].length*100) + '%' + '</td><td>' + resultObj[i].datePlusTime + '</td></tr>';
+						else if(resultObj[i].ruleBroke == "In/Out Ratio" || resultObj[i].ruleBroke == "Large traffic flow"){
+							table += '<tr class="ip-cell"><td>' + resultObj[i].ruleBroke + '</td><td>' + resultObj[i].value + '</td><td>' + Math.round(resultObj[i].length*100) + '% increase' + '</td><td>' + resultObj[i].datePlusTime + '</td></tr>';
 						}
 					}
 					table += '</tbody></table>';
@@ -531,16 +589,21 @@
 
 	function start_active(mac){
 		var command = selected_command();
-		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "active_report_call")%>', {
-			mac:mac,
-			command:command},
-			function(_,res){
-				if(res){
-					alert("Monitoring started");
-					close_monitoring();
-					get_active();	
-				}
-			});
+		if(command != ""){
+			interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "active_report_call")%>', {
+				mac:mac,
+				command:command},
+				function(_,res){
+					if(res){
+						alert("Monitoring started");
+						close_monitoring();
+						get_active();	
+					}
+				});
+		}
+		else{
+			alert("No fields selected. Cannot begin monitoring.")
+		}
 	}
 
 	function selected_command(){
@@ -581,13 +644,13 @@
 						row.cells[j].style.backgroundColor = "rgba(0,0,200,0.2)";
 					}
 				}
-				if(row.cells[0].innerHTML == "Unexpected behaviour"){
-					if(row.cells[1].innerHTML == "Too much data sent"){
+				if(row.cells[0].innerHTML == "In/Out Ratio"){
+					if(row.cells[1].innerHTML == "Data sent"){
 						for(var j = 0; j < row.cells.length; j++){
 							row.cells[j].style.backgroundColor = "rgba(68,23,100,0.2)";
 						}
 					}
-					if(row.cells[1].innerHTML == "Too much data received"){
+					if(row.cells[1].innerHTML == "Data received"){
 						for(var j = 0; j < row.cells.length; j++){
 							row.cells[j].style.backgroundColor = "rgba(255,32,255,0.2)";
 						}
@@ -622,9 +685,383 @@
 		document.getElementById("devicesDiv").style.display = "block";
 	}
 
+	function add_rule_allow(mac, name){
+		var ip = document.getElementById("customIPEntry").value;
+
+		if(check_is_ip(ip)){
+			interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "add_rule_allow")%>', {
+			mac:mac,
+			ip:ip},
+			function(_,res){
+				if(res.complete){
+					console.log(true)
+					connpage_suffix(mac, name);
+					toggle_iptable()
+				}
+			});
+		}
+		else{
+			alert("Not a valid IP");
+		}
+	}
+
+	function add_rule_drop(mac, name){
+		var ip = document.getElementById("customIPEntry").value;
+
+		if(check_is_ip(ip)){
+			interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "add_rule_drop")%>', {
+			mac:mac,
+			ip:ip},
+			function(_,res){
+				if(res.complete){
+					console.log(true)
+					connpage_suffix(mac, name);
+					toggle_iptable()
+				}
+			});
+		}
+		else{
+			alert("Not a valid IP");
+		}
+	}
+
+	function check_is_ip(ip){
+		var splitIP = ip.split(".");
+		if(splitIP.length === 4){
+			for(var i=0; i<splitIP.length;i++){
+				var num = parseInt(splitIP[i], 10);
+				if(num < 0 && num > 255){
+					return false;
+				}
+			}
+			return true;
+		}
+		else{
+			return false;
+		}
+	}
+
+	function delete_rule(mac, index, name){
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "delete_rule")%>', {
+			mac:mac,
+			index:index},
+			function(_,res){
+				if(res.complete){
+					console.log(true)
+					connpage_suffix(mac, name)
+				}
+			});
+		event.stopPropagation();
+	}
+
+	function get_blocked(){
+		console.log
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "get_blocked")%>', null,
+			function(_,res){
+				console.log(res)
+			});
+	}
+
+	function get_breakdown(ip, mac, devName){
+		document.getElementById("reportHeader").innerHTML = devName + " connections to " + ip;
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "connection_breakdown")%>', {ip:ip, mac:mac},
+			function(_, sql){
+				//Hold results sent back
+				console.log(sql);
+				breakDownResults = sql;
+
+				//Check to make sure we have results
+				if (breakDownResults != null){
+					
+					//Utilise JSONP service offered by geoplugin passing it IP and callback to geoDisplay
+					var geoScript = document.createElement('script');
+					geoScript.src = 'http://www.geoplugin.net/json.gp?ip=' + ip
+					+ '&jsoncallback=geoDisplay';
+
+					//Append this script to page so it is called
+					document.getElementById("overlay").appendChild(geoScript);
+
+					//Calls and holds object that has port numbers against their collective length of packets sent
+					var portWithLen = mergeInOut(breakDownResults);
+
+					//Holds the values without ports
+					var portLengths = Object.values(portWithLen);
+					//Generates colours that will be displayed in chart
+					var colourVals = colourList(portLengths.length);
+					//Holds ports without the values
+					var labelVals = Object.keys(portWithLen);
+
+					//Create object to hold chart
+					var ctx = document.getElementById("portChart");
+
+					//Collects variable into data object
+					var data = {
+					    datasets: [{
+					        data: portLengths,
+					        backgroundColor: colourVals,
+					        label: 'My dataset' // for legend
+					    }],
+					    labels: labelVals
+					};
+
+					//Creats chart
+					portChart = new Chart(ctx, {
+					    data: data,
+					    type: "doughnut",
+					    options: {
+					    	//Animation is enabled
+					        animation: {
+					            animateScale: true
+					        },
+					        tooltips: {
+					        	callbacks: {
+					        		//Renames labels of the chart to read as file size not an int
+					        		label: function(tooltipItem, data) {
+					        			var tableContents = data.datasets[tooltipItem.datasetIndex].data;
+					        			var label = data.labels[tooltipItem.index];
+					        			var cellData =  tableContents[tooltipItem.index];
+					        			return label + ": " + bytesToSize(cellData);
+					        		}
+					        	}
+					        }
+					    }
+					});
+					genPortTable(breakDownResults);
+					genOtherDevicesTable(ip);
+				}
+			});
+			openOverlay();		
+	};
+
+	function mergeInOut(breakDown){
+		var dataObject = {};
+		for(var i = 0; i < breakDown.length; i++){
+			var port = "Port: " + breakDown[i].port.toString();
+			if(dataObject.hasOwnProperty(port)){
+				dataObject[port] = dataObject[port] + breakDown[i].length;
+			}
+			else{
+				dataObject[port] = breakDown[i].length;
+			}
+		}
+		return dataObject
+	};
+
+	function geoDisplay(data){
+		//If status is not 200, something has gone wrong, display error
+		if(data.geoplugin_status != 200){
+			var geoTable = "<table id=\"geoTable\" class=\"cbi-section-table\"><tbody>";
+			geoTable += '<tr><td class = "mac-cell"><b>Country</b></td>'
+					+ '<td class = "mac-cell">-</td></tr>'
+					+ '<tr><td class = "mac-cell"><b>Region</b></td>'
+					+ '<td class = "mac-cell">-</td></tr>'
+					+ '<tr><td class = "mac-cell"><b>City</b></td>'
+					+ '<td class = "mac-cell">-</td></tr>'
+					+ '<tr><td class = "mac-cell"><b>Latitude</b></td>'
+					+ '<td class = "mac-cell">-</td></tr>'
+					+ '<tr><td class = "mac-cell"><b>Longitude</b></td>'
+					+ '<td class = "mac-cell">-</td></tr>';
+
+			document.getElementById("geoTableDiv").innerHTML=geoTable;
+			document.getElementById("geoTableDiv").style.pointerEvents='auto';
+			document.getElementById("geoTableDiv").style.opacity=1;
+		}
+		//Else parse and display data into table
+		else{
+			var geoTable = "<table id=\"geoTable\" class=\"cbi-section-table\"><tbody>";
+			geoTable += '<tr><td class = "mac-cell"><b>Country</b></td>'
+					+ '<td class = "mac-cell">' + data.geoplugin_countryName + '</td></tr>'
+					+ '<tr><td class = "mac-cell"><b>Region</b></td>'
+					+ '<td class = "mac-cell">' + data.geoplugin_regionName + '</td></tr>'
+					+ '<tr><td class = "mac-cell"><b>City</b></td>'
+					+ '<td class = "mac-cell">' + data.geoplugin_city + '</td></tr>'
+					+ '<tr><td class = "mac-cell"><b>Latitude</b></td>'
+					+ '<td class = "mac-cell">' + data.geoplugin_latitude + '</td></tr>'
+					+ '<tr><td class = "mac-cell"><b>Longitude</b></td>'
+					+ '<td class = "mac-cell">' + data.geoplugin_longitude + '</td></tr>';
+
+			document.getElementById("geoTableDiv").innerHTML=geoTable;
+			document.getElementById("geoTableDiv").style.pointerEvents='auto';
+			document.getElementById("geoTableDiv").style.opacity=1;
+		}
+	}
+
+	function genPortTable(results){
+		var portTableContents = "<table id=\"portTable\" class=\"cbi-section-table\"><tbody>";
+		portTableContents+= "<tr><th>Port</th><th>Direction</th><th>Data sent</th></tr>";
+		for(var i = 0; i < results.length; i++){
+			result = results[i];
+			var usage = get_Port_Usage(result.port);
+			portTableContents += '<tr draggable = "true">'
+						+ '<td class = "mac-cell" style = "width:40%;;">'
+						+ usage + result.port
+						+ '</td>'
+						+ '<td class = "mac-cell" style = "width:20%;;">'
+						+ result.connection
+						+ '</td>'
+						+ '<td class = "mac-cell-length" style = "width:40%;;">'
+						+ bytesToSize(result.length)
+						+ '</td>'
+						+ '</tr>';
+		};
+		portTableContents += '</table>';
+		document.getElementById("tableBreakdown").innerHTML = portTableContents;
+	};
+
+	function genOtherDevicesTable(ip){
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "connections_select")%>', null,
+				function(_, MACs){
+						var devices = MACs;
+						console.log(devices);
+						genOtherHelper(devices, ip);
+				})
+	}
+
+	function genOtherHelper(macs, ip){
+		interpreter.get('<%=luci.dispatcher.build_url("admin", "smart_tab", "get_other")%>', {ip:ip},
+				function(_, res){
+						var history = res;
+						console.log(history);
+						var macList = {};
+						for(var i = 0; i < macs.length; i++){
+							var deviceName = macs[i].devName;
+							var macToFind = macs[i].devMAC;
+							var length = 0;
+							for(var j = 0; j < history.length; j++){
+								if(macToFind == history[j].monitorMAC){
+									length = history[j].len;
+								}
+							}
+							macList[deviceName] = length;
+						}
+						makeOtherDevChart(macList);
+				})
+	}
+
+	function makeOtherDevChart(obj){
+
+		var ctx = document.getElementById("otherDevChart");
+
+		var macKeys = Object.keys(obj);
+		var lenVals = Object.values(obj);
+		var backColours = colourListAlpha(macKeys.length, "0.2");
+		var borderColours = colourListAlpha(macKeys.length, "1.0");
+		var data = {
+			labels: macKeys,
+			datasets: [
+				{
+					label: "Other device usage",
+					backgroundColor: backColours,
+					borderColor: borderColours,
+					borderWidth: 1,
+					data: lenVals,
+				}
+			]
+		};
+		otherDevChart = new Chart(ctx, {
+	    		type: 'bar',
+	    		data: data,
+	    		options: {
+	    			legend: {
+    					display: false,
+					},
+	    			tooltips: {
+			        	callbacks: {
+			        		//Renames labels of the chart to read as file size not an int
+			        		label: function(tooltipItem, data) {
+			        			var tableContents = data.datasets[tooltipItem.datasetIndex].data;
+			        			var cellData =  tableContents[tooltipItem.index];
+			        			return bytesToSize(cellData);
+			        		}
+			        	}	
+			        },
+	        		scales: {
+	            		xAxes: [{
+	                		stacked: true
+	            		}],
+	            		yAxes: [{
+	                		stacked: true,
+	                		ticks: {
+						        callback: function (valuePayload) {
+									return bytesToSize(valuePayload);
+									}					
+						       }
+	            		}]
+	        		}
+        	}	
+		});
+	}
+
+	function colourList(integerVal){
+		if (integerVal == 1){
+			return ["#00FF00"];
+		}
+		var colourList = [];
+		var weightedVal = Math.ceil(510/(integerVal-1));
+		for(var i = 0; i < integerVal; i++){
+			var red = 0 + (weightedVal*i);
+			var green = 510 - (weightedVal*i);
+			if(green > 255){green = 255};
+			if(green < 0){green = 0};
+			if(red > 255){red = 255};
+
+			var redStr = ("0" + red.toString(16)).substr(-2);
+			var greenStr = ("0" + green.toString(16)).substr(-2);
+			colourList[i] = "#" + redStr + greenStr + "00";
+
+
+		}
+		return colourList;
+	};
+
+	function colourListAlpha(integerVal, transparency){
+		if(integerVal == 1){
+			return ["rgba(255, 0, 0, " + transparency + ")"]
+		}
+		var colourList = [];
+		var weightedVal = Math.ceil(510/(integerVal-1));
+		
+		for (i = 0; i < integerVal; i++){
+			var red = 0 + (weightedVal*i);
+			var green = 510 - (weightedVal*i);
+			if(green > 255){green = 255};
+			if(green < 0){green = 0};
+			if(red > 255){red = 255};
+
+			var value = ("rgba(" + red + ", " + green + ", 0, " + transparency + ")");
+			colourList[i] = value;
+		}
+		return colourList;
+	}
+
+	function openOverlay(){
+		document.getElementById("overlay").style.width = "100%";
+	}
+
+	function closeOverlay(){
+		document.getElementById("overlay").style.width = "0%";
+	}
+
 
 </script>
 <style>
+
+	table tr td:hover {
+		cursor:pointer;
+	}
+
+	table tr td .show-on-hover {
+	    display: none;
+	}
+
+	table tr td:hover .show-on-hover {
+	    display: inline;
+	}
+
+	.lefter{
+		border-right:1px solid #000000;
+	}
+
 	.monButton{
 		width: 45% !important;
 		background-color: #FFFFFF;
@@ -716,9 +1153,98 @@
 	.page{
 		margin-top: 40px;
 	}
+
 	.blocked{
 		margin-top:20px;
 		text-align: center;
+		display:none;
+	}
+
+	.remip{
+		float:right;
+		border-style: solid;
+		color: #000000;
+		border-width: 1px;
+		border-radius: 10px;
+		padding-top: 1px;
+		padding-bottom: 1px;
+		margin: 0px;
+	}
+
+	#overlay{
+		height:100%;
+		width:0;
+		position: fixed;
+		z-index: 1;
+		left:0;
+		top:0;
+		background-color: rgba(0,0,0,0.5);
+		overflow-x:hidden;
+		transition: 0.5s;
+		#overlayContent{
+			overflow:auto;
+		}
+	}
+
+	#overlayContent{
+		position: relative;
+		top: 10%;
+		width: 80%;
+		max-width: 1000px;
+		height: autoz;
+		background-color: #FFFFFF;
+		margin-top: 30px;
+		margin-bottom: 30px;
+		margin:auto;
+		border-radius: 10px;
+		padding: 15px;
+		transition: 0.5s;
+		text-align:center;
+		padding-bottom: 100px;
+	}
+
+	#closeOverlay{
+		font-size: 40px;
+		display: block;
+		position: absolute;
+		top: 50px;
+		right:50px;
+		color: rgba(255,255,255, 0.6);
+		text-decoration: none;
+		transition: 0.5s;
+	}
+
+	#closeOverlay:hover{
+		color: rgba(255,255,255, 1);
+	}
+
+	.reportHeader{
+		font-weight: bold;
+		font-size: 18px;
+		text-align: center;
+		padding-bottom: 5px;
+		color: "#DDDDDD";
+	}
+
+	.chart{
+		display: inline-block;
+		width:45%;
+	}
+
+	#divGeoStats{
+		padding-top: 60px;
+		display: inline-block;
+		float: right;
+		width:45%;
+	}
+
+	#reportHeader{
+		font-size: 25px;
+		padding-bottom: 25px;
+		color: "#888888";
+		padding-top: 10px;
+		text-align: center;
+		text-decoration: underline;
 	}
 	
 </style>
@@ -732,19 +1258,45 @@
 	<div id = "connectionsPage" class = "page" style="display:none;">
 		<h2 id="connHeader">Connection Page</h2><br>
 		<input class = "backButton" type = "button" onclick="close_conns()" value = "Back" style="float:right;"/>
-		<div id = "connections_content" class = "overlayContent"></div>
+		<div id = "connections_content"></div>
 		<h2 id="blockedHeader" class="blocked" style="display:none;">New Connections Established</h2>
 		<canvas id="blockedChart" class="blocked" height="60"></canvas>
-		<div id = "connections_suffix" class = "overlayContent"></div>
+		<div id = "connections_suffix"></div>
 	</div>
 
 	<div id = "monitoringPage" class = "page" style="display:none;">
 		<h2 id="monHeader">Monitoring Page</h2><br>
 		<input class = "backButton" type = "button" onclick="close_monitoring()" value = "Back" style="float:right;"/>
-		<div id = "monitoring_content" class = "overlayContent"></div>
+		<div id = "monitoring_content"></div>
+	</div>
+
+	<div id = "overlay">
+		<a href="javascript:void(0)" id="closeOverlay" onclick="closeOverlay()">X</a>
+		<div id = "overlayContent">
+			<p id="reportHeader"></p>
+			<div class= "contained">
+				<div class="chart">
+					<p class="reportHeader">Ports Used</p>
+					<canvas id="portChart"></canvas>
+				</div>
+				<div id="divGeoStats">
+					<p class="reportHeader">Geolocation</p>
+					<table id="geoTableDiv"></table>
+				</div>
+				<br>
+				<div style="display: block">
+					<div id="tableBreakdown" style= "display:inline-block; padding-top: 60px"></div>
+					<div class="chart" style="float:right;">
+						<p class="reportHeader">Connections to IP<br>from other monitored devices</p>
+						<canvas id="otherDevChart"></canvas>
+					</div>
+				</div>
+			</div>
+		</div>
 	</div>
 </div>
 <script>
 	get_MACs()
 	get_active()
+	get_blocked()
 </script>
