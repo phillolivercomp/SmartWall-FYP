@@ -14,26 +14,34 @@ import threading
 # Set details needed for methods
 ###########################################
 
+#Set refresh rate of script
 refresh_rate = 5
+#Set amount of change needed to cause rule violation where appropriate
 changeRatio = 0.5
 
+#open database for connections
 conn = sql.connect('/tmp/connections.db')
 cur = conn.cursor()
 
+#Open reports database
 rep = sql.connect('/tmp/reports.db')
 repcur = rep.cursor()
+#Create global hour variable
 global hour
 
+#Method to get current hour
 def getHour():
     return int(time.strftime("%H"))
+#Method to set current hour
 def setHour():
     global hour
     hour = getHour()
 
+#Initiate variable with current hour
 setHour()
 
+#Function to check if table exists to hold data
 def checkTables ():
-    #Function to check if table exists to hold data
     repcur.execute("CREATE TABLE IF NOT EXISTS reports (mac text, ruleBroke text, value text, length int, datePlusTime datetime default current_timestamp, PRIMARY KEY (mac, ruleBroke, value));")
 
 ##########################################
@@ -42,15 +50,16 @@ def checkTables ():
 # Methods to generate report from data
 ##########################################
 
+#Scans through file looking for DeviceIP objects and trims the string accordingly to get the IP address
 def getMACs ():
-    #Scans through file looking for DeviceIP objects and trims the string accordinglu to get the IP address
     List = []
+    #Gets the file names of all files in the directory
     for file in os.listdir("/usr/lib/smartwall/reports/active"):
     	List.append(file);
     return List
 
+#Generates report saving objects to a data object
 def generate_Report(mac):
-
 	data = {}
 	ipValues = ips_Used(mac)
 	portValues = ports_Used(mac)
@@ -63,6 +72,7 @@ def generate_Report(mac):
 	data['max'] = max_data(mac)
 	return data
 
+#Gets the ips that a mac address has connected to with the lengths of data sent to each
 def ips_Used(mac):
 	cur.execute("SELECT toIP, SUM(length) FROM connectionHistory WHERE monitorMAC = ? AND toIP NOT LIKE '192.168.%' AND toIP NOT LIKE '10.%' AND toIP NOT LIKE '172.[0-9].%' AND toIP NOT LIKE '172.[1-2][0-9].%' AND toIP NOT LIKE '172.3[1-2].%' GROUP BY toIP ORDER BY SUM(length) DESC", (mac,))
 	ipListSQL = cur.fetchall()
@@ -74,6 +84,7 @@ def ips_Used(mac):
 		ipListLen.append(item[1])
 	return [ipList, ipListLen]
 
+#Gets the ports a mac address has used with the lengths of data using each
 def ports_Used(mac):
 	cur.execute("SELECT port, SUM(length) FROM connectionHistory WHERE monitorMAC = ? AND toIP NOT LIKE '192.168.%' AND toIP NOT LIKE '10.%' AND toIP NOT LIKE '172.[0-9].%' AND toIP NOT LIKE '172.[1-2][0-9].%' AND toIP NOT LIKE '172.3[1-2].%' GROUP BY port ORDER BY SUM(length) DESC", (mac,))
 	portListSQL = cur.fetchall()
@@ -85,6 +96,7 @@ def ports_Used(mac):
 		portListLen.append(item[1])
 	return [portList, portListLen]
 
+#Gets data in for the past hour 
 def data_IN(mac):
 	cur.execute("SELECT dataIN FROM dataRate WHERE monitorMAC = ? ORDER BY hour ASC", (mac,))
 	results = cur.fetchall()
@@ -94,6 +106,7 @@ def data_IN(mac):
 		inBytes = results[hour][0] - results[23][0]
 	return inBytes
 
+#Gets data out for the past hour
 def data_OUT(mac):
 	cur.execute("SELECT dataOUT FROM dataRate WHERE monitorMAC = ? ORDER BY hour ASC", (mac,))
 	results = cur.fetchall()
@@ -103,7 +116,7 @@ def data_OUT(mac):
 		outBytes = results[hour][0] - results[23][0]
 	return outBytes
 
-
+#Gets maximum data flow in an hour for the past 24 hours
 def max_data(mac):
 	cur.execute("SELECT dataSize FROM dataRate WHERE monitorMAC = ? ORDER BY hour ASC", (mac,))
 	dataVals = cur.fetchall()
