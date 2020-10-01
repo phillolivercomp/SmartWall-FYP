@@ -3,7 +3,7 @@ Phillip Oliver - 1342764
 
 
 Requirements to installation:
-	•	Router with OpenWRT installed on
+	•	Router with OpenWRT installed
 	•	OpenWRT  install with following actions taken
 		o	Python (minimal or full) installed through opkg package manager
 		o	Sqlite3-Python plugin installed through opkg package manager
@@ -11,4 +11,4 @@ Requirements to installation:
 		o	Json plugin placed in \usr\lib\lua
 		o	Controller model view folders merged with existing folders in \usr\lib\lua\luci
 		o	Smartwall lib folder placed inside \usr\lib
-	•	Reboot to complete install
+	•	Reboot to complete the installment
